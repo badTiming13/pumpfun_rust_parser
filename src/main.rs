@@ -36,8 +36,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .map(|x| &x.name)
         .collect();
     
-    println!("{:#?}", pump_instructions);
-    //process_transactions(transactions, &amm_idl);
+    //println!("{:#?}", pump_instructions);
+    process_transactions(transactions, &amm_idl, false);
    
 
     Ok(())
@@ -80,12 +80,15 @@ fn load_idls() -> (PumpIdl, PumpIdl) {
     (pump_idl, amm_idl)
 }
 
-fn process_transactions(transactions: &Vec<Transaction>, amm_idl: &PumpIdl) -> Result<(), Box<dyn std::error::Error>> {
+
+
+fn process_transactions(transactions: &Vec<Transaction>, idl: &PumpIdl, pump: bool) -> Result<(), Box<dyn std::error::Error>> {
  for (tx_idx, tx) in transactions.iter().enumerate() {
         println!("\n================ TX #{tx_idx} ================");
 
+        let pumpfun = if pump {PUMPFUN_PROGRAM_ADDRESS} else {PUMPSWAP_PROGRAM_ADDRESS};
         // пытаемся найти индекс программы в этой транзакции
-        let Some(pump_program_index) = find_program_index(tx, PUMPSWAP_PROGRAM_ADDRESS) else {
+        let Some(pump_program_index) = find_program_index(tx, pumpfun) else {
             println!("Pump program not found in this tx, skipping");
             continue;
         };
@@ -102,12 +105,12 @@ fn process_transactions(transactions: &Vec<Transaction>, amm_idl: &PumpIdl) -> R
 
         // --- обрабатываем ВСЕ outer-инструкции ---
         for (idx, ix) in pump_instructions.iter().enumerate() {
-            match_and_print(tx, ix, &amm_idl, format!("tx #{tx_idx} outer #{idx}"))?;
+            match_and_print(tx, ix, &idl, format!("tx #{tx_idx} outer #{idx}"))?;
         }
 
         // --- и ВСЕ inner-инструкции ---
         for (idx, ix) in pump_inner_instructions.iter().enumerate() {
-            match_and_print(tx, ix, &amm_idl, format!("tx #{tx_idx} inner #{idx}"))?;
+            match_and_print(tx, ix, &idl, format!("tx #{tx_idx} inner #{idx}"))?;
         }
 
         // --- события из логов (BuyEvent / SellEvent) ---
