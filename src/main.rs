@@ -1,21 +1,30 @@
 use std::fs;
 
-mod pump_utils;
+mod pump_amm_utils;
+mod utils;
 mod types;
+mod config;
 
-use crate::pump_utils::{
-    collect_program_instructions,
-    decode_event_from_log,
-    find_program_index,
-    map_ix_accounts,
-    match_amm_instruction,
+use crate::pump_amm_utils::{
+    decode_amm_event_from_log,
+    match_instruction
 };
+
+use crate::utils::{
+    find_program_index,
+    collect_program_instructions,
+    map_ix_accounts
+};
+
+use crate::config::constants::{
+    PUMPFUN_PROGRAM_ADDRESS,
+    PUMPSWAP_PROGRAM_ADDRESS
+};
+
 use crate::types::AmmEvent;
 use crate::types::block_notification::{BlockNotification, Instruction, Transaction};
 use crate::types::pump_idl::PumpIdl;
 
-const PUMPSWAP_PROGRAM_ADDRESS: &str = "pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA";
-const PUMPFUN_PROGRAM_ADDRESS: &str = "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P";
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (pump_idl, amm_idl) = load_idls();
@@ -36,8 +45,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .map(|x| &x.name)
         .collect();
     
-    //println!("{:#?}", pump_instructions);
-    process_transactions(transactions, &amm_idl, false);
+    println!("{:#?}", pump_instructions);
+    process_amm_transactions(transactions, &amm_idl);
    
 
     Ok(())
@@ -49,7 +58,7 @@ fn match_and_print(
     amm_idl: &PumpIdl,
     label: String,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    if let Some((idl_ix, decoded)) = match_amm_instruction(ix, amm_idl)? {
+    if let Some((idl_ix, decoded)) = match_instruction(ix, amm_idl)? {
         let discriminator = &decoded[..8];
         println!("\n[{label}] Matched instruction: {}", idl_ix.name);
         println!("Signature: {:?}", tx.transaction.signatures.get(0).unwrap());
@@ -81,14 +90,12 @@ fn load_idls() -> (PumpIdl, PumpIdl) {
 }
 
 
-
-fn process_transactions(transactions: &Vec<Transaction>, idl: &PumpIdl, pump: bool) -> Result<(), Box<dyn std::error::Error>> {
+fn process_pump_transactions(transactions: &Vec<Transaction>, idl: &PumpIdl) -> Result<(), Box<dyn std::error::Error>> {
  for (tx_idx, tx) in transactions.iter().enumerate() {
         println!("\n================ TX #{tx_idx} ================");
 
-        let pumpfun = if pump {PUMPFUN_PROGRAM_ADDRESS} else {PUMPSWAP_PROGRAM_ADDRESS};
         // пытаемся найти индекс программы в этой транзакции
-        let Some(pump_program_index) = find_program_index(tx, pumpfun) else {
+        let Some(pump_program_index) = find_program_index(tx, PUMPFUN_PROGRAM_ADDRESS) else {
             println!("Pump program not found in this tx, skipping");
             continue;
         };
@@ -115,7 +122,55 @@ fn process_transactions(transactions: &Vec<Transaction>, idl: &PumpIdl, pump: bo
 
         // --- события из логов (BuyEvent / SellEvent) ---
         for line in tx.meta.log_messages.as_deref().unwrap_or(&[]) {
-            if let Some(event) = decode_event_from_log(line)? {
+            if let Some(event) = decode_amm_event_from_log(line)? {
+                match event {
+                    AmmEvent::Buy(e) => {
+                        println!("BuyEvent: {:#?}", e);
+                    }
+                    AmmEvent::Sell(e) => {
+                        println!("SellEvent: {:#?}", e);
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+
+fn process_amm_transactions(transactions: &Vec<Transaction>, idl: &PumpIdl) -> Result<(), Box<dyn std::error::Error>> {
+ for (tx_idx, tx) in transactions.iter().enumerate() {
+        println!("\n================ TX #{tx_idx} ================");
+
+        // пытаемся найти индекс программы в этой транзакции
+        let Some(pump_program_index) = find_program_index(tx, PUMPSWAP_PROGRAM_ADDRESS) else {
+            println!("Pump program not found in this tx, skipping");
+            continue;
+        };
+
+        let (pump_instructions, pump_inner_instructions) =
+            collect_program_instructions(tx, pump_program_index);
+
+        println!("Pump program index: {}", pump_program_index);
+        println!("Outer pump instructions count: {}", pump_instructions.len());
+        println!(
+            "Inner pump instructions count: {}",
+            pump_inner_instructions.len()
+        );
+
+        // --- обрабатываем ВСЕ outer-инструкции ---
+        for (idx, ix) in pump_instructions.iter().enumerate() {
+            match_and_print(tx, ix, &idl, format!("tx #{tx_idx} outer #{idx}"))?;
+        }
+
+        // --- и ВСЕ inner-инструкции ---
+        for (idx, ix) in pump_inner_instructions.iter().enumerate() {
+            match_and_print(tx, ix, &idl, format!("tx #{tx_idx} inner #{idx}"))?;
+        }
+
+        // --- события из логов (BuyEvent / SellEvent) ---
+        for line in tx.meta.log_messages.as_deref().unwrap_or(&[]) {
+            if let Some(event) = decode_amm_event_from_log(line)? {
                 match event {
                     AmmEvent::Buy(e) => {
                         println!("BuyEvent: {:#?}", e);
