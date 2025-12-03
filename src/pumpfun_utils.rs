@@ -3,7 +3,7 @@ use borsh::BorshDeserialize;
 use bs58;
 
 use crate::types::block_notification::{Instruction, Transaction};
-use crate::types::pump_events::{CreateEvent, PumpEvent, SetMetaplexCreatorEvent, TradeEvent};
+use crate::types::pump_events::{CompletePumpAmmMigrationEvent, CreateEvent, PumpEvent, SetMetaplexCreatorEvent, TradeEvent};
 use crate::types::pump_idl::{Instruction as IdlInstruction, PumpIdl};
 
 //Pumpfun Events
@@ -40,9 +40,9 @@ pub fn decode_amm_event_from_log(line: &str) -> Result<Option<PumpEvent>, Box<dy
     } else if disc == SETMETAPLEX_CREATOR_EVENT_DISCRIMINATOR {
         let event = SetMetaplexCreatorEvent::try_from_slice(payload)?;
         Ok(Some(PumpEvent::SetMetaplexCreator(event)))
-    } else if disc == SETMETAPLEX_CREATOR_EVENT_DISCRIMINATOR {
-        let event = SetMetaplexCreatorEvent::try_from_slice(payload)?;
-        Ok(Some(PumpEvent::SetMetaplexCreator(event)))
+    } else if disc == COMPLETE_PUMPAMM_MIGRATION_EVENT_DISCRIMINATOR {
+        let event = CompletePumpAmmMigrationEvent::try_from_slice(payload)?;
+        Ok(Some(PumpEvent::CompletePumpAmmMigration(event)))
     } else {
         Ok(None)
     }
