@@ -11,27 +11,6 @@ const BUY_EVENT_DISCRIMINATOR: [u8; 8] = [103, 244, 82, 31, 44, 245, 119, 119];
 const SELL_EVENT_DISCRIMINATOR: [u8; 8] = [62, 47, 55, 10, 165, 3, 220, 42];
 
 
-/// Декодирует data, достаёт дискриминатор и ищет соответствующую инструкцию в amm IDL
-pub fn match_instruction<'a>(
-    ix: &Instruction,
-    idl: &'a PumpIdl,
-) -> Result<Option<(&'a IdlInstruction, Vec<u8>)>, bs58::decode::Error> {
-    let decoded = bs58::decode(&ix.data).into_vec()?;
-
-    if decoded.len() < 8 {
-        return Ok(None);
-    }
-
-    let discriminator = &decoded[..8];
-
-    let maybe_ix = idl
-        .instructions
-        .iter()
-        .find(|idl_ix| idl_ix.discriminator.as_slice() == discriminator);
-
-    Ok(maybe_ix.map(|idl_ix| (idl_ix, decoded)))
-}
-
 /// Декодим BuyEvent / SellEvent из логов (`Program data: ...`)
 pub fn decode_amm_event_from_log(line: &str) -> Result<Option<AmmEvent>, Box<dyn std::error::Error>> {
     let prefix = "Program data: ";

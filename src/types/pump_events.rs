@@ -84,7 +84,7 @@ pub struct CollectCreatorFeeEvent{
     creator_fee: u64
 }
 
-#[derive(Debug)]
+#[derive(BorshDeserialize,Debug)]
 pub enum PumpEvent {
     Trade(TradeEvent),
     Create(CreateEvent),

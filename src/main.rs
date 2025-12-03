@@ -1,19 +1,22 @@
 use std::fs;
 
 mod pump_amm_utils;
+mod pumpfun_utils;
 mod utils;
 mod types;
 mod config;
 
 use crate::pump_amm_utils::{
-    decode_amm_event_from_log,
-    match_instruction
+    decode_amm_event_from_log
 };
 
 use crate::utils::{
     find_program_index,
     collect_program_instructions,
-    map_ix_accounts
+    map_ix_accounts,
+    match_instruction,
+    match_and_print,
+    load_idls
 };
 
 use crate::config::constants::{
@@ -45,49 +48,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .map(|x| &x.name)
         .collect();
     
-    println!("{:#?}", pump_instructions);
-    process_amm_transactions(transactions, &amm_idl);
-   
+    println!("{:#?}", pump_events);
+    
+    //process_amm_transactions(transactions, &amm_idl);
+
 
     Ok(())
 }
 
-fn match_and_print(
-    tx: &Transaction,
-    ix: &Instruction,
-    amm_idl: &PumpIdl,
-    label: String,
-) -> Result<(), Box<dyn std::error::Error>> {
-    if let Some((idl_ix, decoded)) = match_instruction(ix, amm_idl)? {
-        let discriminator = &decoded[..8];
-        println!("\n[{label}] Matched instruction: {}", idl_ix.name);
-        println!("Signature: {:?}", tx.transaction.signatures.get(0).unwrap());
-        println!("  discriminator: {:?}", discriminator);
-        println!("  docs: {:?}", idl_ix.docs);
-
-        let mapped_accounts = map_ix_accounts(tx, ix, idl_ix);
-        println!("  accounts:");
-        for (name, pk) in mapped_accounts {
-            println!("    - {:30} => {}", name, pk);
-        }
-    } else {
-        println!("\n[{label}] Unknown amm instruction (no match in IDL)");
-    }
-
-    Ok(())
-}
-
-fn load_idls() -> (PumpIdl, PumpIdl) {
-    let amm_file_content =
-        fs::read_to_string("./idl/pump_amm.json").expect("Couldn't read pump_amm.json");
-    let pump_file_content =
-        fs::read_to_string("./idl/pump.json").expect("Couldn't read pump.json");
-    let amm_idl: PumpIdl =
-        serde_json::from_str(&amm_file_content).expect("Serde JSON parse error (amm)");
-    let pump_idl: PumpIdl =
-        serde_json::from_str(&pump_file_content).expect("Serde JSON parse error (pump)");
-    (pump_idl, amm_idl)
-}
 
 
 fn process_pump_transactions(transactions: &Vec<Transaction>, idl: &PumpIdl) -> Result<(), Box<dyn std::error::Error>> {

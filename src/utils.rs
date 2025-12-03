@@ -1,6 +1,7 @@
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use borsh::BorshDeserialize;
 use bs58;
+use std::fs;
 
 use crate::types::block_notification::{Instruction, Transaction};
 use crate::types::pump_idl::{Instruction as IdlInstruction, PumpIdl};
@@ -93,4 +94,62 @@ pub fn map_ix_accounts(
     }
 
     mapped
+}
+
+/// Декодирует data, достаёт дискриминатор и ищет соответствующую инструкцию в amm IDL
+pub fn match_instruction<'a>(
+    ix: &Instruction,
+    idl: &'a PumpIdl,
+) -> Result<Option<(&'a IdlInstruction, Vec<u8>)>, bs58::decode::Error> {
+    let decoded = bs58::decode(&ix.data).into_vec()?;
+
+    if decoded.len() < 8 {
+        return Ok(None);
+    }
+
+    let discriminator = &decoded[..8];
+
+    let maybe_ix = idl
+        .instructions
+        .iter()
+        .find(|idl_ix| idl_ix.discriminator.as_slice() == discriminator);
+
+    Ok(maybe_ix.map(|idl_ix| (idl_ix, decoded)))
+}
+
+pub fn match_and_print(
+    tx: &Transaction,
+    ix: &Instruction,
+    idl: &PumpIdl,
+    label: String,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if let Some((idl_ix, decoded)) = match_instruction(ix, idl)? {
+        let discriminator = &decoded[..8];
+        println!("\n[{label}] Matched instruction: {}", idl_ix.name);
+        println!("Signature: {:?}", tx.transaction.signatures.get(0).unwrap());
+        println!("  discriminator: {:?}", discriminator);
+        println!("  docs: {:?}", idl_ix.docs);
+
+        let mapped_accounts = map_ix_accounts(tx, ix, idl_ix);
+        println!("  accounts:");
+        for (name, pk) in mapped_accounts {
+            println!("    - {:30} => {}", name, pk);
+        }
+    } else {
+        println!("\n[{label}] Unknown amm instruction (no match in IDL)");
+    }
+
+    Ok(())
+}
+
+pub fn load_idls() -> (PumpIdl, PumpIdl) {
+    let amm_file_content =
+        fs::read_to_string("./idl/pump_amm.json").expect("Couldn't read pump_amm.json");
+    let pump_file_content =
+        fs::read_to_string("./idl/pump.json").expect("Couldn't read pump.json");
+    let amm_idl: PumpIdl =
+        serde_json::from_str(&amm_file_content).expect("Serde JSON parse error (amm)");
+    let pump_idl: PumpIdl =
+        serde_json::from_str(&pump_file_content).expect("Serde JSON parse error (pump)");
+    (pump_idl, amm_idl)
 }
