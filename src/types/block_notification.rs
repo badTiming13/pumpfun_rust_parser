@@ -47,7 +47,7 @@ pub struct BlockValue {
 pub struct Transaction {
     pub transaction: TransactionValue,
     pub meta: Meta,
-    pub version: u8,
+    pub version: Option<serde_json::Value>,
 }
 
 
@@ -117,6 +117,7 @@ pub struct TransactionMessage {
     pub account_keys: Vec<String>,
     pub recent_blockhash: String,
     pub instructions: Vec<Instruction>,
+    #[serde(default)]
     pub address_table_lookups: Vec<AddressLookup>,
 }
 

@@ -10,6 +10,8 @@ use crate::pump_amm_utils::{
     decode_amm_event_from_log
 };
 
+use crate::pumpfun_utils::decode_pump_event_from_log;
+use crate::types::pump_events::PumpEvent;
 use crate::utils::{
     find_program_index,
     collect_program_instructions,
@@ -33,25 +35,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (pump_idl, amm_idl) = load_idls();
     let tx_file_content = fs::read_to_string("./tx.json")?;
 
+
+    // amm tx
     let block_notification: BlockNotification = serde_json::from_str(&tx_file_content)?;
     let transactions = &block_notification.params.result.value.block.transactions;
 
-    let pump_instructions: Vec<&String> = pump_idl
-        .instructions
-        .iter()
-        .map(|x| &x.name)
-        .collect();
 
-    let pump_events: Vec<&String> = pump_idl
-        .events
-        .iter()
-        .map(|x| &x.name)
-        .collect();
-    
-    println!("{:#?}", pump_events);
+    //trying to decode pump tx
+    let pump_tx_f_content = fs::read_to_string("./pumpfun_tx.json")?;
+    let pump_block_notification: BlockNotification = serde_json::from_str(&pump_tx_f_content)?;
+    let pump_txs = &pump_block_notification.params.result.value.block.transactions;
     
     //process_amm_transactions(transactions, &amm_idl);
-
+    process_pump_transactions(pump_txs, &pump_idl);
 
     Ok(())
 }
@@ -90,13 +86,25 @@ fn process_pump_transactions(transactions: &Vec<Transaction>, idl: &PumpIdl) -> 
 
         // --- события из логов (BuyEvent / SellEvent) ---
         for line in tx.meta.log_messages.as_deref().unwrap_or(&[]) {
-            if let Some(event) = decode_amm_event_from_log(line)? {
+            if let Some(event) = decode_pump_event_from_log(line)? {
                 match event {
-                    AmmEvent::Buy(e) => {
-                        println!("BuyEvent: {:#?}", e);
+                    PumpEvent::Trade(e) => {
+                        println!("TradeEvent: {:#?}", e);
                     }
-                    AmmEvent::Sell(e) => {
-                        println!("SellEvent: {:#?}", e);
+                    PumpEvent::Create(e) => {
+                        println!("CreateEvent: {:#?}", e);
+                    }
+                    PumpEvent::SetMetaplexCreator(e) => {
+                        println!("SetMetaplexCreatorEvent: {:#?}", e);
+                    }
+                    PumpEvent::CompletePumpAmmMigration(e) => {
+                        println!("CompletePumpAmmMigrationEvent: {:#?}", e);
+                    }
+                    PumpEvent::Complete(e) => {
+                        println!("CompleteEvent: {:#?}", e);
+                    }
+                    PumpEvent::CollectCreatorFee(e) => {
+                        println!("CollectCreatorFeeEvent: {:#?}", e);
                     }
                 }
             }
