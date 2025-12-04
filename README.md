@@ -3,7 +3,8 @@
 ## TODO: 
 ### 1. create DB connector for Clickhouse
 ### 2. create WS connection client
-### 3. to be continued ...
+### 3. add calculation  of price, market cap
+### 4. to be continued ...
 
 ## Don't forget to make tests
 How much time needed to parse 1 block, 1 tx ? 
