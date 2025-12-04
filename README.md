@@ -1,9 +1,16 @@
 ## Parsing & decoding AMM transaction works
 
 ## TODO: 
-### 1. implement Pumpfun transaction parsing
-### 2. create DB connector for Clickhouse
+### 1. create DB connector for Clickhouse
+### 2. create WS connection client
 ### 3. to be continued ...
+
+## Don't forget to make tests
+How much time needed to parse 1 block, 1 tx ? 
+How much time needed to save block of transactions ?
+CPU and memory consumption
+
+Make optimizations based on the results
 
 ## Websocket, how to?
 ```
