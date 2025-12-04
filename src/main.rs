@@ -30,6 +30,7 @@ use crate::types::AmmEvent;
 use crate::types::block_notification::{BlockNotification, Instruction, Transaction};
 use crate::types::pump_idl::PumpIdl;
 
+use chrono::{DateTime};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (pump_idl, amm_idl) = load_idls();
@@ -47,9 +48,40 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let pump_txs = &pump_block_notification.params.result.value.block.transactions;
     
     //process_amm_transactions(transactions, &amm_idl);
-    process_pump_transactions(pump_txs, &pump_idl);
-
+    //process_pump_transactions(pump_txs, &pump_idl);
+    let sol_reserves: f64 = 79760995551.0;
+    let token_reserves: f64 = 403580722736262.0;
+    let sol_in_lamports: f64 = 49128124.0; 
+    let token: f64 = 248429187691.0;
+    let mid_price = mid_price_sol(sol_reserves, token_reserves);
+    let trade_price = trade_price_sol(sol_in_lamports, token);
+    let timestamp: i64 = 1764528870;
+    println!("Pumpfun price and mcap tests");
+    println!("Mid price SOL: {}", mid_price);
+    println!("Trade price SOL: {}", trade_price);
+    println!("Mid mcap SOL: {},  Trade mcap SOL: {}", market_cap_sol(mid_price), market_cap_sol(trade_price));
+    println!("Trade was executed at: {} (GMT)", format_timestamp_human(timestamp));
+    println!("//////////////////////////////////");
+    println!("Pumpswap price and mcap tests");
+    
     Ok(())
+}
+
+//Functions to determine price, mcap and datetime of event for pumpfun (tested successfully), didn't test for pumpswap
+fn mid_price_sol(virtual_sol_reserves: f64, virtual_token_reserves: f64) -> f64{
+    (virtual_sol_reserves/virtual_token_reserves) * 1e-3
+}
+fn trade_price_sol(sol_amount: f64, token_amount: f64) -> f64{
+    (sol_amount/token_amount) * 1e-3
+}
+fn market_cap_sol(price: f64) -> f64{
+    price * 1_000_000_000f64
+}
+pub fn format_timestamp_human(ts: i64) -> String {
+    let dt = DateTime::from_timestamp(ts, 0)
+        .expect("invalid timestamp");
+
+    dt.format("%Y-%m-%d %H:%M:%S").to_string()
 }
 
 
