@@ -1,0 +1,18 @@
+version: "3.8"
+
+services:
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.8
+    container_name: pump-clickhouse
+    restart: unless-stopped
+    environment:
+      - CLICKHOUSE_DB=pump
+      - CLICKHOUSE_USER=default
+      - CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1
+      - CLICKHOUSE_PASSWORD=pump
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    volumes:
+      - ./clickhouse-data:/var/lib/clickhouse
+      - ./clickhouse-logs:/var/log/clickhouse-server

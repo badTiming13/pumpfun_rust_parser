@@ -1,0 +1,103 @@
+use serde::Serialize;
+use clickhouse::{Row};
+// =======================
+// CLICKHOUSE ROW STRUCTS
+// =======================
+
+#[derive(Debug, Serialize, Row)]
+pub struct PumpTradeRow {
+    pub slot: u64,
+    pub block_height: u64,
+    pub tx_index_in_block: u16,
+    pub log_index: u16,
+    pub signature: String,
+    pub mint: String,
+    pub bonding_curve: String,
+    pub associated_bonding_curve: String,
+    pub global: String,
+    pub associated_user: String,
+    pub user: String,
+    pub fee_recipient: String,
+    pub creator: String,
+    pub creator_vault: String,
+    pub token_program: String,
+    pub system_program: String,
+    pub event_authority: String,
+    pub program: String,
+    pub global_volume_accumulator: String,
+    pub user_volume_accumulator: String,
+    pub fee_config: String,
+    pub fee_program: String,
+    pub event_timestamp: i64,
+    pub ix_name: String,
+    pub is_buy: u8,
+    pub sol_amount: u64,
+    pub token_amount: u64,
+    pub virtual_sol_reserves: u64,
+    pub virtual_token_reserves: u64,
+    pub real_sol_reserves: u64,
+    pub real_token_reserves: u64,
+    pub fee_basis_points: u16,
+    pub fee: u64,
+    pub creator_fee_basis_points: u16,
+    pub creator_fee: u64,
+    pub track_volume: u8,
+    pub total_unclaimed_tokens: u64,
+    pub total_claimed_tokens: u64,
+    pub current_sol_volume: u64,
+    pub last_update_timestamp: i64,
+}
+
+
+#[derive(Debug, Serialize, Row)]
+pub struct PumpCreateRow {
+    pub slot: u64,
+    pub block_height: u64,
+    pub tx_index_in_block: u16,
+    pub log_index: u16,
+    pub signature: String,
+    pub event_timestamp: i64,
+    pub name: String,
+    pub symbol: String,
+    pub uri: String,
+    pub mint: String,
+    pub bonding_curve: String,
+    pub user: String,
+    pub creator: String,
+    pub virtual_token_reserves: u64,
+    pub virtual_sol_reserves: u64,
+    pub real_token_reserves: u64,
+    pub token_total_supply: u64,
+    pub token_program: String,
+    pub is_mayhem_mode: u8,
+    pub mint_authority: String,
+    pub associated_bonding_curve: String,
+    pub global: String,
+    pub system_program: String,
+    pub associated_token_program: String,
+    pub mayhem_program_id: String,
+    pub global_params: String,
+    pub sol_vault: String,
+    pub mayhem_state: String,
+    pub mayhem_token_vault: String,
+    pub event_authority: String,
+    pub program: String,
+}
+
+
+#[derive(Debug, Serialize, Row)]
+pub struct PumpCreatorFeeRow {
+    pub slot: u64,
+    pub block_height: u64,
+    pub tx_index_in_block: u16,
+    pub log_index: u16,
+    pub signature: String,
+    pub event_timestamp: i64,
+    pub creator: String,
+    pub creator_fee: u64,
+    pub ix_creator: String,
+    pub creator_vault: String,
+    pub system_program: String,
+    pub event_authority: String,
+    pub program: String,
+}

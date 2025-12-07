@@ -2,7 +2,7 @@ use borsh::BorshDeserialize;
 use std::fmt;
 use bs58;
 
-#[derive(BorshDeserialize, Debug)]
+#[derive(BorshDeserialize, Debug, Clone)]
 pub struct BuyEvent {
     pub timestamp: i64,
     pub base_amount_out: u64,
@@ -36,7 +36,7 @@ pub struct BuyEvent {
     pub ix_name: String,
 }
 
-#[derive(BorshDeserialize, Debug)]
+#[derive(BorshDeserialize, Debug, Clone)]
 pub struct SellEvent{
     pub timestamp: i64,
     pub base_amount_in: u64,
@@ -63,7 +63,7 @@ pub struct SellEvent{
     pub coin_creator_fee: u64
 }
 
-#[derive(Debug)]
+#[derive(BorshDeserialize,Debug, Clone)]
 pub enum AmmEvent {
     Buy(BuyEvent),
     Sell(SellEvent),
@@ -73,6 +73,13 @@ pub enum AmmEvent {
 pub struct Pubkey(pub [u8; 32]);
 
 impl fmt::Debug for Pubkey {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = bs58::encode(self.0).into_string();
+        write!(f, "{s}")
+    }
+}
+
+impl fmt::Display for Pubkey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = bs58::encode(self.0).into_string();
         write!(f, "{s}")

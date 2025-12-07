@@ -4,87 +4,87 @@ use std::fmt;
 use crate::types::Pubkey;
 
 
-#[derive(BorshDeserialize, Debug)]
+#[derive(BorshDeserialize, Debug, Clone)]
 pub struct TradeEvent{
-    mint: Pubkey,
-    sol_amount: u64,
-    token_amount: u64,
-    is_buy: bool,
-    user: Pubkey,
-    timestamp: i64,
-    virtual_sol_reserves: u64,
-    virtual_token_reserves: u64,
-    real_sol_reserves: u64,
-    real_token_reserves: u64,
-    fee_recipient: Pubkey,
-    fee_basis_points: u64,
-    fee: u64,
-    creator: Pubkey,
-    creator_fee_basis_points: u64,
-    creator_fee: u64,
-    track_volume: bool,
-    total_unclaimed_tokens: u64,
-    total_claimed_tokens: u64,
-    current_sol_volume: u64,
-    last_update_timestamp: i64,
-    ix_name: String
+    pub mint: Pubkey,
+    pub sol_amount: u64,
+    pub token_amount: u64,
+    pub is_buy: bool,
+    pub user: Pubkey,
+    pub timestamp: i64,
+    pub virtual_sol_reserves: u64,
+    pub virtual_token_reserves: u64,
+    pub real_sol_reserves: u64,
+    pub real_token_reserves: u64,
+    pub fee_recipient: Pubkey,
+    pub fee_basis_points: u64,
+    pub fee: u64,
+    pub creator: Pubkey,
+    pub creator_fee_basis_points: u64,
+    pub creator_fee: u64,
+    pub track_volume: bool,
+    pub total_unclaimed_tokens: u64,
+    pub total_claimed_tokens: u64,
+    pub current_sol_volume: u64,
+    pub last_update_timestamp: i64,
+    pub ix_name: String
 }
 
-#[derive(BorshDeserialize, Debug)]
+#[derive(BorshDeserialize, Debug, Clone)]
 pub struct CreateEvent{
-    name: String,
-    symbol: String,
-    uri: String,
-    mint: Pubkey,
-    bonding_curve: Pubkey,
-    user: Pubkey, 
-    creator: Pubkey,
-    timestamp: i64,
-    virtual_token_reserves: u64,
-    virtual_sol_reserves: u64,
-    real_token_reserves: u64,
-    token_total_supply: u64,
-    token_program: Pubkey,
-    is_mayhem_mode: bool
+    pub name: String,
+    pub symbol: String,
+    pub uri: String,
+    pub mint: Pubkey,
+    pub bonding_curve: Pubkey,
+    pub user: Pubkey, 
+    pub creator: Pubkey,
+    pub timestamp: i64,
+    pub virtual_token_reserves: u64,
+    pub virtual_sol_reserves: u64,
+    pub real_token_reserves: u64,
+    pub token_total_supply: u64,
+    pub token_program: Pubkey,
+    pub is_mayhem_mode: bool
 }
 
-#[derive(BorshDeserialize, Debug)]
+#[derive(BorshDeserialize, Debug, Clone)]
 pub struct SetMetaplexCreatorEvent{
-    timestamp: i64,
-    mint: Pubkey,
-    bonding_curve: Pubkey,
-    metadata: Pubkey,
-    creator: Pubkey
+    pub timestamp: i64,
+    pub mint: Pubkey,
+    pub bonding_curve: Pubkey,
+    pub metadata: Pubkey,
+    pub creator: Pubkey
 }
 
-#[derive(BorshDeserialize, Debug)]
+#[derive(BorshDeserialize, Debug, Clone)]
 pub struct CompletePumpAmmMigrationEvent{
-    user: Pubkey, 
-    mint: Pubkey,
-    mint_amount: u64,
-    sol_amount: u64,
-    pool_migration_fee: u64,
-    bonding_curve: Pubkey,
-    timestamp: i64,
-    pool: Pubkey
+    pub user: Pubkey, 
+    pub mint: Pubkey,
+    pub mint_amount: u64,
+    pub sol_amount: u64,
+    pub pool_migration_fee: u64,
+    pub bonding_curve: Pubkey,
+    pub timestamp: i64,
+    pub pool: Pubkey
 }
 
-#[derive(BorshDeserialize, Debug)]
+#[derive(BorshDeserialize, Debug, Clone)]
 pub struct CompleteEvent{
-    user: Pubkey,
-    mint: Pubkey,
-    bonding_curve: Pubkey,
-    timestamp: i64
+    pub user: Pubkey,
+    pub mint: Pubkey,
+    pub bonding_curve: Pubkey,
+    pub timestamp: i64
 }
 
-#[derive(BorshDeserialize, Debug)]
+#[derive(BorshDeserialize, Debug, Clone)]
 pub struct CollectCreatorFeeEvent{
-    timestamp: i64,
-    creator: Pubkey,
-    creator_fee: u64
+    pub timestamp: i64,
+    pub creator: Pubkey,
+    pub creator_fee: u64
 }
 
-#[derive(BorshDeserialize,Debug)]
+#[derive(BorshDeserialize,Debug, Clone)]
 pub enum PumpEvent {
     Trade(TradeEvent),
     Create(CreateEvent),
