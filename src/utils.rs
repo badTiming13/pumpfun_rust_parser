@@ -75,7 +75,7 @@ pub fn join_amm_ix_and_events(
             AmmEvent::Buy(ev) => {
                 let pool = ev.pool.to_string();
                 let user = ev.user.to_string();
-                let ix_name = ev.ix_name.as_str(); // "buy" или "buy_exact_quote_in" и т.п.
+                let ix_name = ev.ix_name.as_str();
 
                 if let Some(ix_ctx) = ix_contexts.iter().find(|ix| {
                     ix.accounts.get("pool").map(|s| s.as_str()) == Some(pool.as_str())

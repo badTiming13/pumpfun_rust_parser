@@ -18,13 +18,9 @@ use crate::{
     },
 };
 
-// =======================
-// MAIN
-// =======================
-
 fn main() -> AppResult<()> {
     let (pump_idl, amm_idl) = load_idls();
-    let _ch_client = load_db(); // пока не используем, но пусть инициализируется
+    let _ch_client = load_db();
 
     // AMM tx (для теста)
     let tx_file_content = fs::read_to_string("./tx.json")?;
@@ -42,18 +38,12 @@ fn main() -> AppResult<()> {
         .transactions;
 
     // AMM
-    //process_amm_transactions(transactions, &amm_idl)?;
+    process_amm_transactions(transactions, &amm_idl)?;
     // Pumpfun
-    process_pump_transactions(pump_txs, &pump_idl)?;
+    //process_pump_transactions(pump_txs, &pump_idl)?;
 
     Ok(())
 }
-
-// =======================
-// ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
-// =======================
-
-
 
 // =======================
 // PUMPFUN PROCESSING
@@ -272,7 +262,7 @@ fn process_amm_transactions(transactions: &Vec<Transaction>, idl: &PumpIdl) -> A
                     println!("user_base_token_reserves: {}",ev.user_base_token_reserves);
                     println!("user_quote_token_reserves: {}", ev.user_quote_token_reserves);
                     println!("pool_base_token_reserves:{}",ev.pool_base_token_reserves);
-                    println!("  pool_quote_token_reserves: {}",ev.pool_quote_token_reserves);
+                    println!("pool_quote_token_reserves: {}",ev.pool_quote_token_reserves);
                     println!("quote_amount_out:{}", ev.quote_amount_out);
                     println!("lp_fee_basis_points: {}",ev.lp_fee_basis_points);
                     println!("lp_fee:{}", ev.lp_fee);

@@ -1,4 +1,6 @@
 ## Parsing & decoding AMM transaction works
+Added combined events + instruction display for Pumpfun & Pumpswap  
+
 
 ## TODO: 
 ### 1. create DB connector for Clickhouse
