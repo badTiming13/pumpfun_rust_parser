@@ -17,6 +17,10 @@ use futures::{SinkExt, StreamExt};
 use serde_json::json;
 use tokio_tungstenite::connect_async;
 
+use redis::aio::MultiplexedConnection;
+use redis::Client as RedisClient;
+
+use crate::utils::publish_event;
 use crate::{
     db::{PumpCreateRow, PumpCreatorFeeRow, PumpTradeRow, amm_types::AmmTradeRow},
     prelude::*,
@@ -32,6 +36,9 @@ async fn main() -> AppResult<()> {
     let (pump_idl, amm_idl) = load_idls();
     let ch_client = load_db();
 
+    let redis_client = RedisClient::open("redis://127.0.0.1/")?;
+    let redis_conn = redis_client.get_multiplexed_async_connection().await?;
+
     // ClickHouse client можно клонировать – внутри он cheap-clone
     let pump_ch = ch_client.clone();
     let amm_ch  = ch_client.clone();
@@ -39,18 +46,24 @@ async fn main() -> AppResult<()> {
     let pump_idl_clone = pump_idl.clone();
     let amm_idl_clone  = amm_idl.clone();
 
+    // Отдельный коннект под Pumpfun
+    let pump_redis_conn = redis_client.get_multiplexed_async_connection().await?;
+    // Отдельный коннект под AMM
+    let amm_redis_conn  = redis_client.get_multiplexed_async_connection().await?;
+
+
     // URL ноды
     let url = "wss://solana-mainnet.core.chainstack.com/3dec72ea492a69e1ea1fa532c2de1af7";
 
     // Запускаем два независимых таска: Pumpfun и AMM
     let pump_task = tokio::spawn(async move {
-        if let Err(e) = run_pumpfun_stream(url, pump_idl_clone, &pump_ch).await {
+        if let Err(e) = run_pumpfun_stream(url, pump_idl_clone, &pump_ch, pump_redis_conn).await {
             eprintln!("Pumpfun stream error: {e}");
         }
     });
 
     let amm_task = tokio::spawn(async move {
-        if let Err(e) = run_amm_stream(url, amm_idl_clone, &amm_ch).await {
+        if let Err(e) = run_amm_stream(url, amm_idl_clone, &amm_ch, amm_redis_conn).await {
             eprintln!("AMM stream error: {e}");
         }
     });
@@ -65,6 +78,7 @@ async fn run_pumpfun_stream(
     url: &str,
     idl: PumpIdl,
     ch_client: &Client,
+    mut redis_conn: MultiplexedConnection,
 ) -> AppResult<()> {
     loop {
         println!("🔌 Connecting Pumpfun stream...");
@@ -122,7 +136,7 @@ async fn run_pumpfun_stream(
                         txs.len()
                     );
 
-                    if let Err(e) = process_pump_transactions(txs, &idl, ch_client).await {
+                    if let Err(e) = process_pump_transactions(txs, &idl, ch_client, &mut redis_conn).await {
                         eprintln!("Pumpfun process error: {e}");
                     }
                 }
@@ -162,6 +176,7 @@ async fn run_amm_stream(
     url: &str,
     idl: PumpIdl,
     ch_client: &Client,
+    mut redis_conn: MultiplexedConnection,
 ) -> AppResult<()> {
     loop {
         println!("🔌 Connecting AMM stream...");
@@ -215,7 +230,7 @@ async fn run_amm_stream(
                         txs.len()
                     );
 
-                    if let Err(e) = process_amm_transactions(txs, &idl, ch_client).await {
+                    if let Err(e) = process_amm_transactions(txs, &idl, ch_client, &mut redis_conn).await {
                         eprintln!("AMM process error: {e}");
                     }
                 }
@@ -254,6 +269,7 @@ async fn process_pump_transactions(
     transactions: &Vec<Transaction>,
     idl: &PumpIdl,
     ch_client: &Client,
+    redis_conn: &mut MultiplexedConnection,
 ) -> AppResult<()> {
     let mut trade_rows: Vec<PumpTradeRow> = Vec::new();
     let mut create_rows: Vec<PumpCreateRow> = Vec::new();
@@ -318,17 +334,21 @@ async fn process_pump_transactions(
             match action.event.event {
                 PumpEvent::Trade(_) => {
                     if let Some(row) = PumpTradeRow::from_joined(&signature, action) {
-                        trade_rows.push(row);
+                        trade_rows.push(row.clone());
+                        publish_event(redis_conn, "pump:trades", &row).await?;
                     }
                 }
                 PumpEvent::Create(_) => {
                     if let Some(row) = PumpCreateRow::from_joined(&signature, action) {
-                        create_rows.push(row);
+                        create_rows.push(row.clone());
+                        publish_event(redis_conn, "pump:creates", &row).await?;
+
                     }
                 }
                 PumpEvent::CollectCreatorFee(_) => {
                     if let Some(row) = PumpCreatorFeeRow::from_joined(&signature, action) {
-                        fee_rows.push(row);
+                        fee_rows.push(row.clone());
+                        publish_event(redis_conn, "pump:creator_fees", &row).await?;
                     }
                 }
                 PumpEvent::SetMetaplexCreator(_)
@@ -385,6 +405,7 @@ pub async fn process_amm_transactions(
     transactions: &Vec<Transaction>,
     idl: &PumpIdl,
     ch_client: &Client,
+    redis_conn: &mut MultiplexedConnection,
 ) -> AppResult<()> {
     let mut amm_rows: Vec<AmmTradeRow> = Vec::new();
 
@@ -442,7 +463,8 @@ pub async fn process_amm_transactions(
 
             // конвертим в ClickHouse-строку
             let row = AmmTradeRow::from_joined(&signature, action);
-            amm_rows.push(row);
+            amm_rows.push(row.clone());
+            publish_event(redis_conn, "amm:trades", &row).await?;
         }
     }
 

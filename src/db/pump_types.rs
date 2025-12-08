@@ -16,7 +16,7 @@ pub fn acc_opt(map: &AccountMap, key: &str) -> Option<String> {
     map.get(key).cloned()
 }
 
-#[derive(Debug, Serialize, Row)]
+#[derive(Debug, Serialize, Row, Clone)]
 pub struct PumpTradeRow {
     // мета по инструкции
     pub signature: String,
@@ -59,7 +59,7 @@ pub struct PumpTradeRow {
     pub track_volume: bool,
 }
 
-#[derive(Debug, Serialize, Row)]
+#[derive(Debug, Serialize, Row, Clone)]
 pub struct PumpCreateRow {
     // мета по инструкции
     pub signature: String,
@@ -98,7 +98,7 @@ pub struct PumpCreateRow {
     pub is_mayhem_mode: bool,
 }
 
-#[derive(Debug, Serialize, Row)]
+#[derive(Debug, Serialize, Row, Clone)]
 pub struct PumpCreatorFeeRow {
     // мета по инструкции
     pub signature: String,

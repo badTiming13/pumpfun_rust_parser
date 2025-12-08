@@ -3,7 +3,7 @@ use clickhouse::Row;
 
 use crate::{db::{acc, acc_opt}, types::AmmEvent, utils::JoinedAmmAction};
 
-#[derive(Debug, Serialize, Row)]
+#[derive(Debug, Serialize, Row, Clone)]
 pub struct AmmTradeRow {
     
     pub signature: String,

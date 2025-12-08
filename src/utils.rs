@@ -7,6 +7,9 @@ use base64::{Engine as _, engine::general_purpose::STANDARD};
 use borsh::BorshDeserialize;
 use bs58;
 use clickhouse::{Client as ChClient, Row};
+use redis::AsyncCommands;
+use redis::aio::MultiplexedConnection;
+use serde::Serialize;
 use std::collections::BTreeMap;
 use std::fs;
 
@@ -419,3 +422,14 @@ pub fn load_db() -> ChClient {
     ch_client
 }
 
+pub async fn publish_event<T: Serialize>(
+    conn: &mut MultiplexedConnection,
+    channel: &str,
+    payload: &T,
+) -> redis::RedisResult<()> {
+    let json = serde_json::to_string(payload)
+        .expect("Failed to serialize event to JSON");
+
+    let _: () = conn.publish(channel, json).await?;
+    Ok(())
+}

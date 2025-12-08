@@ -16,3 +16,9 @@ services:
     volumes:
       - ./clickhouse-data:/var/lib/clickhouse
       - ./clickhouse-logs:/var/log/clickhouse-server
+  redis:
+    image: redis:7-alpine
+    container_name: pump-redis
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
