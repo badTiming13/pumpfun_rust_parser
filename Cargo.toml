@@ -17,3 +17,8 @@ futures = "0.3"
 anyhow = "1.0"
 clickhouse="0.14.1"
 redis = { version = "0.25", features = ["tokio-comp"] }
+pumpfun = { version = "4.6.0", features = ["stream"] }
+solana-sdk = "3"
+solana-client = "3.1.4" 
+sol-trade-sdk = "3.3.6"
+solana-commitment-config = "3.0.0"

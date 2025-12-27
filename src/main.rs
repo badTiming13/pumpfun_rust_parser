@@ -22,7 +22,7 @@ use redis::Client as RedisClient;
 
 use crate::utils::publish_event;
 use crate::{
-    db::{PumpCreateRow, PumpCreatorFeeRow, PumpTradeRow, amm_types::AmmTradeRow},
+    db::{amm_types::AmmTradeRow, PumpCreateRow, PumpCreatorFeeRow, PumpTradeRow},
     prelude::*,
     utils::{
         AmmEventContext, EventContext, InstructionContext, collect_instructions, instructions,
@@ -37,20 +37,18 @@ async fn main() -> AppResult<()> {
     let ch_client = load_db();
 
     let redis_client = RedisClient::open("redis://127.0.0.1/")?;
-    let redis_conn = redis_client.get_multiplexed_async_connection().await?;
 
     // ClickHouse client можно клонировать – внутри он cheap-clone
     let pump_ch = ch_client.clone();
-    let amm_ch  = ch_client.clone();
+    let amm_ch = ch_client.clone();
 
     let pump_idl_clone = pump_idl.clone();
-    let amm_idl_clone  = amm_idl.clone();
+    let amm_idl_clone = amm_idl.clone();
 
     // Отдельный коннект под Pumpfun
     let pump_redis_conn = redis_client.get_multiplexed_async_connection().await?;
     // Отдельный коннект под AMM
-    let amm_redis_conn  = redis_client.get_multiplexed_async_connection().await?;
-
+    let amm_redis_conn = redis_client.get_multiplexed_async_connection().await?;
 
     // URL ноды
     let url = "wss://solana-mainnet.core.chainstack.com/3dec72ea492a69e1ea1fa532c2de1af7";
@@ -92,9 +90,7 @@ async fn run_pumpfun_stream(
             "id": 1,
             "method": "blockSubscribe",
             "params": [
-                {
-                    "mentionsAccountOrProgram": PUMPFUN_PROGRAM_ADDRESS
-                },
+                { "mentionsAccountOrProgram": PUMPFUN_PROGRAM_ADDRESS },
                 {
                     "commitment": "confirmed",
                     "encoding": "json",
@@ -116,35 +112,30 @@ async fn run_pumpfun_stream(
         while let Some(msg) = ws_stream.next().await {
             match msg {
                 Ok(tokio_tungstenite::tungstenite::Message::Text(text)) => {
-                    // 1) пробуем распарсить как наш BlockNotification
                     let parsed = serde_json::from_str::<BlockNotification>(&text);
                     let Ok(notification) = parsed else {
-                        // Скорее всего это ответ на subscribe: {"result":..., "id":1}
-                        // или что-то служебное — просто лог и дальше
-                        // println!("Pumpfun: non-block message: {text}");
+                        // Скорее всего это ответ на subscribe или служебное сообщение
                         continue;
                     };
 
                     let txs = &notification.params.result.value.block.transactions;
+                    let slot: u64 = notification.params.result.value.slot;
 
                     if txs.is_empty() {
                         continue;
                     }
 
-                    println!(
-                        "🧱 Pumpfun block: {} transactions",
-                        txs.len()
-                    );
+                    println!("🧱 Pumpfun block: {} transactions", txs.len());
+                    println!("Slot is: {}", slot);
 
-                    if let Err(e) = process_pump_transactions(txs, &idl, ch_client, &mut redis_conn).await {
+                    if let Err(e) =
+                        process_pump_transactions(txs, slot, &idl, ch_client, &mut redis_conn).await
+                    {
                         eprintln!("Pumpfun process error: {e}");
                     }
                 }
 
-                Ok(tokio_tungstenite::tungstenite::Message::Binary(_bin)) => {
-                    // у нас encoding=json, но на всякий случай игнорим бинарь
-                    continue;
-                }
+                Ok(tokio_tungstenite::tungstenite::Message::Binary(_bin)) => continue,
 
                 Ok(tokio_tungstenite::tungstenite::Message::Ping(p)) => {
                     ws_stream
@@ -154,12 +145,12 @@ async fn run_pumpfun_stream(
 
                 Ok(tokio_tungstenite::tungstenite::Message::Close(frame)) => {
                     println!("Pumpfun WS closed: {:?}", frame);
-                    break; // выйдем из внутреннего while и переподключимся
+                    break;
                 }
 
                 Err(e) => {
                     eprintln!("Pumpfun WS error: {e}");
-                    break; // переподключиться
+                    break;
                 }
 
                 _ => {}
@@ -170,7 +161,6 @@ async fn run_pumpfun_stream(
         tokio::time::sleep(Duration::from_secs(3)).await;
     }
 }
-
 
 async fn run_amm_stream(
     url: &str,
@@ -189,9 +179,7 @@ async fn run_amm_stream(
             "id": 2,
             "method": "blockSubscribe",
             "params": [
-                {
-                    "mentionsAccountOrProgram": PUMPSWAP_PROGRAM_ADDRESS
-                },
+                { "mentionsAccountOrProgram": PUMPSWAP_PROGRAM_ADDRESS },
                 {
                     "commitment": "confirmed",
                     "encoding": "json",
@@ -215,22 +203,22 @@ async fn run_amm_stream(
                 Ok(tokio_tungstenite::tungstenite::Message::Text(text)) => {
                     let parsed = serde_json::from_str::<BlockNotification>(&text);
                     let Ok(notification) = parsed else {
-                        // ответ на subscribe и т.п.
                         continue;
                     };
 
                     let txs = &notification.params.result.value.block.transactions;
+                    let slot: u64 = notification.params.result.value.slot;
 
                     if txs.is_empty() {
                         continue;
                     }
 
-                    println!(
-                        "🧱 AMM block: {} transactions",
-                        txs.len()
-                    );
+                    println!("🧱 AMM block: {} transactions", txs.len());
+                    println!("Slot is: {}", slot);
 
-                    if let Err(e) = process_amm_transactions(txs, &idl, ch_client, &mut redis_conn).await {
+                    if let Err(e) =
+                        process_amm_transactions(txs, slot, &idl, ch_client, &mut redis_conn).await
+                    {
                         eprintln!("AMM process error: {e}");
                     }
                 }
@@ -260,13 +248,13 @@ async fn run_amm_stream(
     }
 }
 
-
 // =======================
 // PUMPFUN PROCESSING
 // =======================
 
 async fn process_pump_transactions(
     transactions: &Vec<Transaction>,
+    slot: u64,
     idl: &PumpIdl,
     ch_client: &Client,
     redis_conn: &mut MultiplexedConnection,
@@ -286,16 +274,22 @@ async fn process_pump_transactions(
         };
 
         let signature = tx.transaction.signatures.get(0).unwrap().to_string();
+
+        let is_success = tx.meta.err.is_none();
+        let tx_error: Option<String> = tx
+            .meta
+            .err
+            .as_ref()
+            .map(|e| serde_json::to_string(e).unwrap_or_else(|_| format!("{:?}", e)));
+
+        println!("Slot: {}", slot);
         println!("Signature: {}", signature);
+        println!("Success: {}", is_success);
+        println!("Error is: {:?}", tx.meta.err);
 
         // 1) Инструкции
-        let ix_contexts = instructions(
-            tx,
-            idl,
-            &pump_instructions,
-            &pump_inner_instructions,
-            tx_idx,
-        )?;
+        let ix_contexts =
+            instructions(tx, idl, &pump_instructions, &pump_inner_instructions, tx_idx)?;
         println!("pump ix_contexts: {:#?}", ix_contexts);
 
         // 2) События
@@ -333,20 +327,38 @@ async fn process_pump_transactions(
 
             match action.event.event {
                 PumpEvent::Trade(_) => {
-                    if let Some(row) = PumpTradeRow::from_joined(&signature, action) {
+                    // ВАЖНО: from_joined теперь должен принимать slot/is_success/tx_error
+                    if let Some(row) = PumpTradeRow::from_joined(
+                        &signature,
+                        slot,
+                        is_success,
+                        tx_error.as_deref(),
+                        action,
+                    ) {
                         trade_rows.push(row.clone());
                         publish_event(redis_conn, "pump:trades", &row).await?;
                     }
                 }
                 PumpEvent::Create(_) => {
-                    if let Some(row) = PumpCreateRow::from_joined(&signature, action) {
+                    if let Some(row) = PumpCreateRow::from_joined(
+                        &signature,
+                        slot,
+                        is_success,
+                        tx_error.as_deref(),
+                        action,
+                    ) {
                         create_rows.push(row.clone());
                         publish_event(redis_conn, "pump:creates", &row).await?;
-
                     }
                 }
                 PumpEvent::CollectCreatorFee(_) => {
-                    if let Some(row) = PumpCreatorFeeRow::from_joined(&signature, action) {
+                    if let Some(row) = PumpCreatorFeeRow::from_joined(
+                        &signature,
+                        slot,
+                        is_success,
+                        tx_error.as_deref(),
+                        action,
+                    ) {
                         fee_rows.push(row.clone());
                         publish_event(redis_conn, "pump:creator_fees", &row).await?;
                     }
@@ -362,7 +374,7 @@ async fn process_pump_transactions(
 
     if !trade_rows.is_empty() {
         println!("Inserting {} pump_trades rows...", trade_rows.len());
-        let mut insert = ch_client.insert::<PumpTradeRow>("pump_trades").await?;
+        let mut insert = ch_client.insert::<PumpTradeRow>("pump_trades_v2").await?;
         for row in &trade_rows {
             insert.write(row).await?;
         }
@@ -371,9 +383,7 @@ async fn process_pump_transactions(
 
     if !create_rows.is_empty() {
         println!("Inserting {} pump_creates rows...", create_rows.len());
-        let mut insert = ch_client
-            .insert::<PumpCreateRow>("pump_creates")
-            .await?;
+        let mut insert = ch_client.insert::<PumpCreateRow>("pump_creates_v2").await?;
         for row in &create_rows {
             insert.write(row).await?;
         }
@@ -385,9 +395,8 @@ async fn process_pump_transactions(
             "Inserting {} pump_collect_creator_fees rows...",
             fee_rows.len()
         );
-        let mut insert = ch_client
-            .insert::<PumpCreatorFeeRow>("pump_collect_creator_fees")
-            .await?;
+        let mut insert =
+            ch_client.insert::<PumpCreatorFeeRow>("pump_collect_creator_fees_v2").await?;
         for row in &fee_rows {
             insert.write(row).await?;
         }
@@ -403,6 +412,7 @@ async fn process_pump_transactions(
 
 pub async fn process_amm_transactions(
     transactions: &Vec<Transaction>,
+    slot: u64,
     idl: &PumpIdl,
     ch_client: &Client,
     redis_conn: &mut MultiplexedConnection,
@@ -420,7 +430,18 @@ pub async fn process_amm_transactions(
         };
 
         let signature = tx.transaction.signatures.get(0).unwrap().to_string();
+
+        let is_success = tx.meta.err.is_none();
+        let tx_error: Option<String> = tx
+            .meta
+            .err
+            .as_ref()
+            .map(|e| serde_json::to_string(e).unwrap_or_else(|_| format!("{:?}", e)));
+
+        println!("Slot: {}", slot);
         println!("Signature: {}", signature);
+        println!("Success: {}", is_success);
+        println!("Error is: {:?}", tx.meta.err);
 
         // 1) инструкции
         let ix_contexts =
@@ -429,7 +450,6 @@ pub async fn process_amm_transactions(
 
         // 2) события
         let mut amm_event_contexts: Vec<AmmEventContext> = Vec::new();
-
         for (log_idx, line) in tx
             .meta
             .log_messages
@@ -446,7 +466,6 @@ pub async fn process_amm_transactions(
                 });
             }
         }
-
         println!("amm event_contexts: {:#?}", amm_event_contexts);
 
         // 3) join
@@ -461,8 +480,15 @@ pub async fn process_amm_transactions(
             println!("is_inner:  {}", action.ix.is_inner);
             println!("Accounts instructions: {:#?}", &action.ix.accounts);
 
-            // конвертим в ClickHouse-строку
-            let row = AmmTradeRow::from_joined(&signature, action);
+            // ВАЖНО: from_joined теперь должен принимать slot/is_success/tx_error
+            let row = AmmTradeRow::from_joined(
+                &signature,
+                slot,
+                is_success,
+                tx_error.as_deref(),
+                action,
+            );
+
             amm_rows.push(row.clone());
             publish_event(redis_conn, "amm:trades", &row).await?;
         }
@@ -471,8 +497,7 @@ pub async fn process_amm_transactions(
     // 4) вставка в ClickHouse
     if !amm_rows.is_empty() {
         println!("Inserting {} amm_trades rows...", amm_rows.len());
-        // как и с pump_*: без имени БД, если в DSN уже pump
-        let mut insert = ch_client.insert::<AmmTradeRow>("amm_trades").await?;
+        let mut insert = ch_client.insert::<AmmTradeRow>("amm_trades_v2").await?;
         for row in &amm_rows {
             insert.write(row).await?;
         }

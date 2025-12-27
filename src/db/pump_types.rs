@@ -1,7 +1,10 @@
-use serde::Serialize;
 use clickhouse::Row;
+use serde::Serialize;
 
-use crate::{prelude::PumpEvent, utils::{AccountMap, JoinedPumpAction}};
+use crate::{
+    prelude::PumpEvent,
+    utils::{AccountMap, JoinedPumpAction},
+};
 
 // =======================
 // CLICKHOUSE ROW STRUCTS
@@ -19,9 +22,12 @@ pub fn acc_opt(map: &AccountMap, key: &str) -> Option<String> {
 #[derive(Debug, Serialize, Row, Clone)]
 pub struct PumpTradeRow {
     // мета по инструкции
+    pub slot: u64,
+    is_success: bool,
+    pub tx_error: Option<String>,
     pub signature: String,
-    pub ix_name: String,        // LowCardinality(String) -> String
-    pub ix_index: u8,           // UInt8
+    pub ix_name: String, // LowCardinality(String) -> String
+    pub ix_index: u8,    // UInt8
     pub is_inner: bool,
     pub is_buy: bool,
 
@@ -41,7 +47,7 @@ pub struct PumpTradeRow {
     pub system_program: String,
     pub token_program: String,
     pub user: String,
-    pub user_volume_accumulator: Option<String>,   // Nullable(String)
+    pub user_volume_accumulator: Option<String>, // Nullable(String)
 
     // поля события
     pub timestamp: i64,              // Int64
@@ -62,8 +68,11 @@ pub struct PumpTradeRow {
 #[derive(Debug, Serialize, Row, Clone)]
 pub struct PumpCreateRow {
     // мета по инструкции
+    pub slot: u64,
+    is_success: bool,
+    pub tx_error: Option<String>,
     pub signature: String,
-    pub ix_name: String,       // LowCardinality(String) -> String
+    pub ix_name: String, // LowCardinality(String) -> String
     pub ix_index: u8,
     pub is_inner: bool,
 
@@ -101,8 +110,11 @@ pub struct PumpCreateRow {
 #[derive(Debug, Serialize, Row, Clone)]
 pub struct PumpCreatorFeeRow {
     // мета по инструкции
+    pub slot: u64,
+    is_success: bool,
+    pub tx_error: Option<String>,
     pub signature: String,
-    pub ix_name: String,      // LowCardinality(String) -> String
+    pub ix_name: String, // LowCardinality(String) -> String
     pub ix_index: u8,
     pub is_inner: bool,
 
@@ -119,7 +131,13 @@ pub struct PumpCreatorFeeRow {
 }
 
 impl PumpTradeRow {
-    pub fn from_joined(signature: &str, action: &JoinedPumpAction) -> Option<Self> {
+    pub fn from_joined(
+        signature: &str,
+        slot: u64,
+        is_success: bool,
+        tx_error: Option<&str>,
+        action: &JoinedPumpAction,
+    ) -> Option<Self> {
         let ix = &action.ix;
         let accs = &ix.accounts;
 
@@ -128,6 +146,11 @@ impl PumpTradeRow {
         };
 
         Some(Self {
+            // NEW
+            slot,
+            is_success,
+            tx_error: tx_error.map(|s| s.to_string()),
+
             signature: signature.to_string(),
             ix_name: ix.ix_name.clone(),
             ix_index: ix.ix_index as u8,
@@ -135,41 +158,47 @@ impl PumpTradeRow {
             is_buy: ev.is_buy,
 
             associated_bonding_curve: acc(accs, "associated_bonding_curve"),
-            associated_user:          acc(accs, "associated_user"),
-            bonding_curve:            acc(accs, "bonding_curve"),
-            creator_vault:            acc(accs, "creator_vault"),
-            event_authority:          acc(accs, "event_authority"),
-            fee_config:               acc(accs, "fee_config"),
-            fee_program:              acc(accs, "fee_program"),
-            fee_recipient:            acc(accs, "fee_recipient"),
-            global:                   acc(accs, "global"),
+            associated_user: acc(accs, "associated_user"),
+            bonding_curve: acc(accs, "bonding_curve"),
+            creator_vault: acc(accs, "creator_vault"),
+            event_authority: acc(accs, "event_authority"),
+            fee_config: acc(accs, "fee_config"),
+            fee_program: acc(accs, "fee_program"),
+            fee_recipient: acc(accs, "fee_recipient"),
+            global: acc(accs, "global"),
             global_volume_accumulator: acc_opt(accs, "global_volume_accumulator"),
-            mint:                     acc(accs, "mint"),
-            program:                  acc(accs, "program"),
-            system_program:           acc(accs, "system_program"),
-            token_program:            acc(accs, "token_program"),
-            user:                     acc(accs, "user"),
-            user_volume_accumulator:  acc_opt(accs, "user_volume_accumulator"),
+            mint: acc(accs, "mint"),
+            program: acc(accs, "program"),
+            system_program: acc(accs, "system_program"),
+            token_program: acc(accs, "token_program"),
+            user: acc(accs, "user"),
+            user_volume_accumulator: acc_opt(accs, "user_volume_accumulator"),
 
-            timestamp:              ev.timestamp,
-            sol_amount:             ev.sol_amount,
-            token_amount:           ev.token_amount,
-            virtual_sol_reserves:   ev.virtual_sol_reserves,
+            timestamp: ev.timestamp,
+            sol_amount: ev.sol_amount,
+            token_amount: ev.token_amount,
+            virtual_sol_reserves: ev.virtual_sol_reserves,
             virtual_token_reserves: ev.virtual_token_reserves,
-            real_sol_reserves:      ev.real_sol_reserves,
-            real_token_reserves:    ev.real_token_reserves,
-            fee_basis_points:       ev.fee_basis_points as u16,
-            fee:                    ev.fee,
-            creator:                ev.creator.to_string(),
+            real_sol_reserves: ev.real_sol_reserves,
+            real_token_reserves: ev.real_token_reserves,
+            fee_basis_points: ev.fee_basis_points as u16,
+            fee: ev.fee,
+            creator: ev.creator.to_string(),
             creator_fee_basis_points: ev.creator_fee_basis_points as u16,
-            creator_fee:            ev.creator_fee,
-            track_volume:           ev.track_volume,
+            creator_fee: ev.creator_fee,
+            track_volume: ev.track_volume,
         })
     }
 }
 
 impl PumpCreateRow {
-    pub fn from_joined(signature: &str, action: &JoinedPumpAction) -> Option<Self> {
+    pub fn from_joined(
+        signature: &str,
+        slot: u64,
+        is_success: bool,
+        tx_error: Option<&str>,
+        action: &JoinedPumpAction,
+    ) -> Option<Self> {
         let ix = &action.ix;
         let accs = &ix.accounts;
 
@@ -178,44 +207,55 @@ impl PumpCreateRow {
         };
 
         Some(Self {
+            // NEW
+            slot,
+            is_success,
+            tx_error: tx_error.map(|s| s.to_string()),
+
             signature: signature.to_string(),
             ix_name: ix.ix_name.clone(),
             ix_index: ix.ix_index as u8,
             is_inner: ix.is_inner,
 
             associated_bonding_curve: acc(accs, "associated_bonding_curve"),
-            associated_user:          acc(accs, "associated_user"),
-            bonding_curve:            acc(accs, "bonding_curve"),
-            event_authority:          acc(accs, "event_authority"),
-            global:                   acc(accs, "global"),
-            global_params:            acc(accs, "global_params"),
-            mayhem_program_id:        acc(accs, "mayhem_program_id"),
-            mayhem_state:             acc(accs, "mayhem_state"),
-            mayhem_token_vault:       acc(accs, "mayhem_token_vault"),
-            mint:                     acc(accs, "mint"),
-            mint_authority:           acc(accs, "mint_authority"),
-            program:                  acc(accs, "program"),
-            sol_vault:                acc(accs, "sol_vault"),
-            system_program:           acc(accs, "system_program"),
-            token_program:            acc(accs, "token_program"),
-            user:                     acc(accs, "user"),
+            associated_user: acc(accs, "associated_user"),
+            bonding_curve: acc(accs, "bonding_curve"),
+            event_authority: acc(accs, "event_authority"),
+            global: acc(accs, "global"),
+            global_params: acc(accs, "global_params"),
+            mayhem_program_id: acc(accs, "mayhem_program_id"),
+            mayhem_state: acc(accs, "mayhem_state"),
+            mayhem_token_vault: acc(accs, "mayhem_token_vault"),
+            mint: acc(accs, "mint"),
+            mint_authority: acc(accs, "mint_authority"),
+            program: acc(accs, "program"),
+            sol_vault: acc(accs, "sol_vault"),
+            system_program: acc(accs, "system_program"),
+            token_program: acc(accs, "token_program"),
+            user: acc(accs, "user"),
 
-            timestamp:             ev.timestamp,
-            name:                  ev.name.clone(),
-            symbol:                ev.symbol.clone(),
-            uri:                   ev.uri.clone(),
-            creator:               ev.creator.to_string(),
+            timestamp: ev.timestamp,
+            name: ev.name.clone(),
+            symbol: ev.symbol.clone(),
+            uri: ev.uri.clone(),
+            creator: ev.creator.to_string(),
             virtual_token_reserves: ev.virtual_token_reserves,
-            virtual_sol_reserves:   ev.virtual_sol_reserves,
-            real_token_reserves:    ev.real_token_reserves,
-            token_total_supply:     ev.token_total_supply,
-            is_mayhem_mode:         ev.is_mayhem_mode,
+            virtual_sol_reserves: ev.virtual_sol_reserves,
+            real_token_reserves: ev.real_token_reserves,
+            token_total_supply: ev.token_total_supply,
+            is_mayhem_mode: ev.is_mayhem_mode,
         })
     }
 }
 
 impl PumpCreatorFeeRow {
-    pub fn from_joined(signature: &str, action: &JoinedPumpAction) -> Option<Self> {
+    pub fn from_joined(
+        signature: &str,
+        slot: u64,
+        is_success: bool,
+        tx_error: Option<&str>,
+        action: &JoinedPumpAction,
+    ) -> Option<Self> {
         let ix = &action.ix;
         let accs = &ix.accounts;
 
@@ -224,18 +264,23 @@ impl PumpCreatorFeeRow {
         };
 
         Some(Self {
+            // NEW
+            slot,
+            is_success,
+            tx_error: tx_error.map(|s| s.to_string()),
+
             signature: signature.to_string(),
             ix_name: ix.ix_name.clone(),
             ix_index: ix.ix_index as u8,
             is_inner: ix.is_inner,
 
-            creator:       acc(accs, "creator"),
+            creator: acc(accs, "creator"),
             creator_vault: acc(accs, "creator_vault"),
             event_authority: acc(accs, "event_authority"),
-            program:       acc(accs, "program"),
+            program: acc(accs, "program"),
             system_program: acc(accs, "system_program"),
 
-            timestamp:   ev.timestamp,
+            timestamp: ev.timestamp,
             creator_fee: ev.creator_fee,
         })
     }

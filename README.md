@@ -1,3 +1,8 @@
+#### NEWEST UPDATE #### 
+Extract Slot and Error from block and transaction respectively, create these 2 new fields for each table, write it. 
+
+
+
 ## Parsing & decoding AMM transaction works
 Added combined events + instruction display for Pumpfun & Pumpswap  
 

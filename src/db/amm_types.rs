@@ -5,7 +5,9 @@ use crate::{db::{acc, acc_opt}, types::AmmEvent, utils::JoinedAmmAction};
 
 #[derive(Debug, Serialize, Row, Clone)]
 pub struct AmmTradeRow {
-    
+    pub slot: u64,
+    is_success: bool,
+    pub tx_error: Option<String>,
     pub signature: String,
     pub ix_name: String,
     pub ix_index: u8,
@@ -61,12 +63,25 @@ pub struct AmmTradeRow {
 }
 
 impl AmmTradeRow {
-    pub fn from_joined(signature: &str, action: &JoinedAmmAction) -> Self {
+    pub fn from_joined(
+        signature: &str,
+        slot: u64,
+        is_success: bool,
+        tx_error: Option<&str>,
+        action: &JoinedAmmAction,
+    ) -> Self {
         let ix = &action.ix;
         let accs = &ix.accounts;
 
+        let tx_error = tx_error.map(|s| s.to_string());
+
         match &action.event.event {
             AmmEvent::Sell(ev) => Self {
+                // NEW meta
+                slot,
+                is_success,
+                tx_error: tx_error.clone(),
+
                 // мета
                 signature: signature.to_string(),
                 ix_name: ix.ix_name.clone(),
@@ -90,10 +105,7 @@ impl AmmTradeRow {
                 pool_quote_token_account: acc(accs, "pool_quote_token_account"),
                 program: acc(accs, "program"),
                 protocol_fee_recipient: acc(accs, "protocol_fee_recipient"),
-                protocol_fee_recipient_token_account: acc(
-                    accs,
-                    "protocol_fee_recipient_token_account",
-                ),
+                protocol_fee_recipient_token_account: acc(accs, "protocol_fee_recipient_token_account"),
                 quote_mint: acc(accs, "quote_mint"),
                 quote_token_program: acc(accs, "quote_token_program"),
                 system_program: acc(accs, "system_program"),
@@ -134,11 +146,16 @@ impl AmmTradeRow {
                 coin_creator_fee_basis_points: ev.coin_creator_fee_basis_points,
                 coin_creator_fee: ev.coin_creator_fee,
 
-                track_volume: false, // в SellEvent поля нет
+                track_volume: false,
                 min_base_amount_out: 0,
             },
 
             AmmEvent::Buy(ev) => Self {
+                // NEW meta
+                slot,
+                is_success,
+                tx_error: tx_error.clone(),
+
                 // мета
                 signature: signature.to_string(),
                 ix_name: ix.ix_name.clone(),
@@ -162,10 +179,7 @@ impl AmmTradeRow {
                 pool_quote_token_account: acc(accs, "pool_quote_token_account"),
                 program: acc(accs, "program"),
                 protocol_fee_recipient: acc(accs, "protocol_fee_recipient"),
-                protocol_fee_recipient_token_account: acc(
-                    accs,
-                    "protocol_fee_recipient_token_account",
-                ),
+                protocol_fee_recipient_token_account: acc(accs, "protocol_fee_recipient_token_account"),
                 quote_mint: acc(accs, "quote_mint"),
                 quote_token_program: acc(accs, "quote_token_program"),
                 system_program: acc(accs, "system_program"),
