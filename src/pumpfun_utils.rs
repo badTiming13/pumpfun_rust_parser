@@ -1,6 +1,7 @@
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use borsh::BorshDeserialize;
 
+use tracing::{debug, info, warn};
 use crate::types::pump_events::{
     CollectCreatorFeeEvent,
     CompleteEvent,
@@ -36,7 +37,7 @@ fn decode_event<T: BorshDeserialize>(
         Ok(ev) => {
             let leftover = slice.len();
             if leftover > 0 {
-                eprintln!(
+                debug!(
                     "⚠️ Borsh decode for {disc_name}: {leftover} extra bytes left (payload_len={}; base64_prefix={}...)",
                     payload.len(),
                     &base64_part[..base64_part.len().min(40)]

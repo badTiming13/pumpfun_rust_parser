@@ -3,20 +3,21 @@ use crate::prelude::PumpEvent;
 use crate::types::AmmEvent;
 use crate::types::block_notification::{Instruction, Transaction};
 use crate::types::pump_idl::{Instruction as IdlInstruction, PumpIdl};
-use base64::{Engine as _, engine::general_purpose::STANDARD};
+use base64::{engine::general_purpose::STANDARD, Engine as _};
 use borsh::BorshDeserialize;
 use bs58;
 use clickhouse::{Client as ChClient, Row};
-use redis::AsyncCommands;
 use redis::aio::MultiplexedConnection;
+use redis::AsyncCommands;
 use serde::Serialize;
 use std::collections::BTreeMap;
 use std::fs;
+use std::time::{SystemTime, UNIX_EPOCH};
+use tracing::{debug, info, warn};
 
 pub type AccountMap = BTreeMap<String, String>;
 
 #[derive(Debug, Clone)]
-
 pub struct InstructionContext {
     pub ix_name: String,
     pub label: String,
@@ -128,7 +129,6 @@ pub fn join_pump_ix_and_events(
                 let bonding_curve = ev.bonding_curve.to_string();
 
                 if let Some(ix_ctx) = ix_contexts.iter().find(|ix| {
-                    // в IDL это обычно "create" или "create_v2"
                     ix.ix_name.starts_with("create")
                         && ix.accounts.get("mint").map(|s| s.as_str()) == Some(mint.as_str())
                         && ix.accounts.get("user").map(|s| s.as_str()) == Some(user.as_str())
@@ -146,7 +146,6 @@ pub fn join_pump_ix_and_events(
                 let creator = ev.creator.to_string();
 
                 if let Some(ix_ctx) = ix_contexts.iter().find(|ix| {
-                    // имя инструкции зависит от IDL, чаще всего "collect_creator_fee"
                     ix.ix_name.starts_with("collect")
                         && ix.accounts.get("creator").map(|s| s.as_str()) == Some(creator.as_str())
                 }) {
@@ -157,7 +156,6 @@ pub fn join_pump_ix_and_events(
                 }
             }
 
-            // остальные типы либо не требуют строгого матча, либо можно пока пропустить
             _ => {}
         }
     }
@@ -222,8 +220,6 @@ pub fn collect_program_instructions<'a>(
 
 /// Маппинг аккаунтов инструкции:
 /// IDL-имя аккаунта → реальный pubkey из транзакции
-///
-/// Возвращаем владящие строки, чтобы не играться с лайфтаймами `&str` из Value.
 pub fn map_ix_accounts(
     tx: &Transaction,
     ix: &Instruction,
@@ -232,16 +228,13 @@ pub fn map_ix_accounts(
     let all_accounts = get_accounts(tx);
     let mut mapped = Vec::new();
 
-    // В IDL аккаунты идут в том же порядке, что и в ix.accounts
     for (i, idl_acc) in idl_ix.accounts.iter().enumerate() {
-        // индекс аккаунта в message.accountKeys / loaded addresses
         let Some(&account_idx) = ix.accounts.get(i) else {
             continue;
         };
         let idx = account_idx as usize;
 
         if let Some(pk) = all_accounts.get(idx) {
-            // accounts[i] — это serde_json::Value
             let name = idl_acc
                 .get("name")
                 .and_then(|v| v.as_str())
@@ -255,7 +248,7 @@ pub fn map_ix_accounts(
     mapped
 }
 
-/// Декодирует data, достаёт дискриминатор и ищет соответствующую инструкцию в amm IDL
+/// Декодирует data, достаёт дискриминатор и ищет соответствующую инструкцию в IDL
 pub fn match_instruction<'a>(
     ix: &Instruction,
     idl: &'a PumpIdl,
@@ -286,19 +279,18 @@ pub fn match_and_collect(
 ) -> Result<Option<InstructionContext>, Box<dyn std::error::Error>> {
     if let Some((idl_ix, decoded)) = match_instruction(ix, idl)? {
         let discriminator = &decoded[..8];
-        println!("\n[{label}] Matched instruction: {}", idl_ix.name);
-        println!("Signature: {:?}", tx.transaction.signatures.get(0).unwrap());
-        println!("  discriminator: {:?}", discriminator);
-        println!("  docs: {:?}", idl_ix.docs);
+
+        debug!(label=%label, ix_name=%idl_ix.name, "Matched instruction");
+        debug!(label=%label, signature=?tx.transaction.signatures.get(0), "Signature");
+        debug!(label=%label, discriminator=?discriminator, docs=?idl_ix.docs, "IDL details");
 
         let mapped_accounts = map_ix_accounts(tx, ix, idl_ix);
-        println!("  accounts:");
+        debug!(label=%label, accounts_len=mapped_accounts.len(), "Mapped accounts");
 
         let mut accounts_map = BTreeMap::new();
-
         for (name, pk) in mapped_accounts {
-            println!("    - {:30} => {}", name, pk);
-            accounts_map.insert(name.clone(), pk.clone());
+            debug!(label=%label, account_name=%name, account_pk=%pk, "Account mapping");
+            accounts_map.insert(name, pk);
         }
 
         let ctx = InstructionContext {
@@ -311,7 +303,7 @@ pub fn match_and_collect(
 
         Ok(Some(ctx))
     } else {
-        println!("\n[{label}] Unknown amm instruction (no match in IDL)");
+        debug!(label=%label, "Unknown instruction (no match in IDL)");
         Ok(None)
     }
 }
@@ -320,16 +312,14 @@ pub fn collect_instructions<'a>(
     tx: &'a Transaction,
     addr: &str,
 ) -> Option<(Vec<&'a Instruction>, Vec<&'a Instruction>)> {
-    // пытаемся найти индекс программы в этой транзакции
     let Some(program_index) = find_program_index(tx, addr) else {
         return None;
     };
 
     let (outer, inner) = collect_program_instructions(tx, program_index);
 
-    println!("Program({addr}) index: {}", program_index);
-    println!("Outer instructions count: {}", outer.len());
-    println!("Inner instructions count: {}", inner.len());
+    debug!(program=%addr, program_index=program_index, "Program index");
+    debug!(program=%addr, outer_len=outer.len(), inner_len=inner.len(), "Instruction counts");
 
     Some((outer, inner))
 }
@@ -343,7 +333,6 @@ pub fn instructions<'a>(
 ) -> AppResult<Vec<InstructionContext>> {
     let mut ix_contexts: Vec<InstructionContext> = Vec::new();
 
-    // --- outer ---
     for (idx, ix) in outer_instructions.iter().enumerate() {
         if let Some(ctx) = match_and_collect(
             tx,
@@ -357,7 +346,6 @@ pub fn instructions<'a>(
         }
     }
 
-    // --- inner ---
     for (idx, ix) in inner_instructions.iter().enumerate() {
         if let Some(ctx) =
             match_and_collect(tx, ix, idl, format!("tx #{tx_idx} inner #{idx}"), idx, true)?
@@ -377,18 +365,18 @@ pub fn match_and_print(
 ) -> Result<(), Box<dyn std::error::Error>> {
     if let Some((idl_ix, decoded)) = match_instruction(ix, idl)? {
         let discriminator = &decoded[..8];
-        println!("\n[{label}] Matched instruction: {}", idl_ix.name);
-        println!("Signature: {:?}", tx.transaction.signatures.get(0).unwrap());
-        println!("  discriminator: {:?}", discriminator);
-        println!("  docs: {:?}", idl_ix.docs);
+
+        debug!(label=%label, ix_name=%idl_ix.name, "Matched instruction");
+        debug!(label=%label, signature=?tx.transaction.signatures.get(0), "Signature");
+        debug!(label=%label, discriminator=?discriminator, docs=?idl_ix.docs, "IDL details");
 
         let mapped_accounts = map_ix_accounts(tx, ix, idl_ix);
-        println!("  accounts:");
+        debug!(label=%label, accounts_len=mapped_accounts.len(), "Mapped accounts");
         for (name, pk) in mapped_accounts {
-            println!("    - {:30} => {}", name, pk);
+            debug!(label=%label, account_name=%name, account_pk=%pk, "Account mapping");
         }
     } else {
-        println!("\n[{label}] Unknown amm instruction (no match in IDL)");
+        debug!(label=%label, "Unknown instruction (no match in IDL)");
     }
 
     Ok(())
@@ -398,15 +386,16 @@ pub fn load_idls() -> (PumpIdl, PumpIdl) {
     let amm_file_content =
         fs::read_to_string("./idl/pump_amm.json").expect("Couldn't read pump_amm.json");
     let pump_file_content = fs::read_to_string("./idl/pump.json").expect("Couldn't read pump.json");
+
     let amm_idl: PumpIdl =
         serde_json::from_str(&amm_file_content).expect("Serde JSON parse error (amm)");
     let pump_idl: PumpIdl =
         serde_json::from_str(&pump_file_content).expect("Serde JSON parse error (pump)");
+
     (pump_idl, amm_idl)
 }
 
 pub fn load_db() -> ChClient {
-    // --- ClickHouse client ---
     let ch_url =
         std::env::var("CLICKHOUSE_URL").unwrap_or_else(|_| "http://localhost:8123".to_string());
     let ch_db = std::env::var("CLICKHOUSE_DB").unwrap_or_else(|_| "pump".to_string());
@@ -427,9 +416,51 @@ pub async fn publish_event<T: Serialize>(
     channel: &str,
     payload: &T,
 ) -> redis::RedisResult<()> {
-    let json = serde_json::to_string(payload)
-        .expect("Failed to serialize event to JSON");
-
+    let json = serde_json::to_string(payload).expect("Failed to serialize event to JSON");
     let _: () = conn.publish(channel, json).await?;
     Ok(())
+}
+
+// ---- Redis Stream для базы ----
+pub async fn publish_event_stream<T: Serialize>(
+    conn: &mut MultiplexedConnection,
+    stream: &str,
+    payload: &T,
+) -> redis::RedisResult<()> {
+    let observed_at_ms = now_ms();
+
+    let json = serde_json::to_string(&serde_json::json!({
+        "observed_at_ms": observed_at_ms,
+        "payload": payload
+    }))
+    .expect("Failed to serialize stream event to JSON");
+
+    let _: String = redis::cmd("XADD")
+        .arg(stream)
+        .arg("*")
+        .arg("data")
+        .arg(json)
+        .query_async(conn)
+        .await?;
+
+    Ok(())
+}
+
+pub fn now_ms() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as i64
+}
+
+pub fn ts_to_ms(ts: i64) -> i64 {
+    if ts < 2_000_000_000_000 {
+        ts * 1000
+    } else {
+        ts
+    }
+}
+
+pub fn lag_ms_from_chain_ts(ts: i64) -> i64 {
+    now_ms() - ts_to_ms(ts)
 }
