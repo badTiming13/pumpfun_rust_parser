@@ -108,6 +108,43 @@ pub struct PumpCreateRow {
 }
 
 #[derive(Debug, Serialize, Row, Clone)]
+pub struct PumpAmmMigrationRow {
+    // meta
+    pub slot: u64,
+    pub is_success: bool,
+    pub tx_error: Option<String>,
+    pub signature: String,
+    pub ix_name: String,
+    pub ix_index: u8,
+    pub is_inner: bool,
+
+    // accounts
+    pub global: String,
+    pub withdraw_authority: String,
+    pub mint: String,
+    pub bonding_curve: String,
+    pub associated_bonding_curve: String,
+    pub user: String,
+
+    pub pump_amm: String,
+    pub pool: String,
+    pub pool_authority: String,
+    pub pool_base_token_account: String,
+    pub pool_quote_token_account: String,
+    pub lp_mint: String,
+
+    pub event_authority: String,
+    pub program: String,
+
+    // event fields
+    pub timestamp: i64,
+    pub mint_amount: u64,
+    pub sol_amount: u64,
+    pub pool_migration_fee: u64,
+}
+
+
+#[derive(Debug, Serialize, Row, Clone)]
 pub struct PumpCreatorFeeRow {
     // мета по инструкции
     pub slot: u64,
@@ -129,6 +166,23 @@ pub struct PumpCreatorFeeRow {
     pub timestamp: i64,
     pub creator_fee: u64,
 }
+#[derive(Debug, Serialize, Clone)]
+pub struct PumpMigrateIxSignal {
+    pub slot: u64,
+    pub signature: String,
+    pub ix_index: u8,
+    pub is_inner: bool,
+
+    pub mint: String,
+    pub pool: String,
+    pub bonding_curve: String,
+    pub associated_bonding_curve: String,
+    pub user: String,
+
+    pub pool_base_token_account: String,
+    pub pool_quote_token_account: String,
+}
+
 
 impl PumpTradeRow {
     pub fn from_joined(
@@ -282,6 +336,56 @@ impl PumpCreatorFeeRow {
 
             timestamp: ev.timestamp,
             creator_fee: ev.creator_fee,
+        })
+    }
+}
+
+impl PumpAmmMigrationRow {
+    pub fn from_joined(
+        signature: &str,
+        slot: u64,
+        is_success: bool,
+        tx_error: Option<&str>,
+        action: &JoinedPumpAction,
+    ) -> Option<Self> {
+        let ix = &action.ix;
+        let accs = &ix.accounts;
+
+        let PumpEvent::CompletePumpAmmMigration(ev) = &action.event.event else {
+            return None;
+        };
+
+        Some(Self {
+            slot,
+            is_success,
+            tx_error: tx_error.map(|s| s.to_string()),
+
+            signature: signature.to_string(),
+            ix_name: ix.ix_name.clone(),
+            ix_index: ix.ix_index as u8,
+            is_inner: ix.is_inner,
+
+            global: acc(accs, "global"),
+            withdraw_authority: acc(accs, "withdraw_authority"),
+            mint: acc(accs, "mint"),
+            bonding_curve: acc(accs, "bonding_curve"),
+            associated_bonding_curve: acc(accs, "associated_bonding_curve"),
+            user: acc(accs, "user"),
+
+            pump_amm: acc(accs, "pump_amm"),
+            pool: acc(accs, "pool"),
+            pool_authority: acc(accs, "pool_authority"),
+            pool_base_token_account: acc(accs, "pool_base_token_account"),
+            pool_quote_token_account: acc(accs, "pool_quote_token_account"),
+            lp_mint: acc(accs, "lp_mint"),
+
+            event_authority: acc(accs, "event_authority"),
+            program: acc(accs, "program"),
+
+            timestamp: ev.timestamp,
+            mint_amount: ev.mint_amount,
+            sol_amount: ev.sol_amount,
+            pool_migration_fee: ev.pool_migration_fee,
         })
     }
 }

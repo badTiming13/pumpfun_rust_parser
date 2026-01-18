@@ -1,6 +1,6 @@
-use std::{fs, time::Duration};
 use std::error::Error;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::{fs, time::Duration};
 
 mod config;
 mod db;
@@ -23,7 +23,8 @@ use redis::aio::MultiplexedConnection;
 use tracing::{debug, error, info, warn};
 use tracing_subscriber::EnvFilter;
 
-use crate::utils::{publish_event, publish_event_stream, lag_ms_from_chain_ts};
+use crate::db::{PumpAmmMigrationRow, PumpMigrateIxSignal};
+use crate::utils::{lag_ms_from_chain_ts, publish_event, publish_event_stream};
 use crate::{
     db::{PumpCreateRow, PumpCreatorFeeRow, PumpTradeRow, amm_types::AmmTradeRow},
     prelude::*,
@@ -36,6 +37,7 @@ use crate::{
 
 // как часто логировать lag (каждые N событий)
 const LOG_EVERY: u64 = 2000;
+const SOL_MINT: &str = "So11111111111111111111111111111111111111112";
 
 // счётчики событий (чтобы не спамить)
 static PUMP_TRADES_CNT: AtomicU64 = AtomicU64::new(0);
@@ -45,8 +47,10 @@ static AMM_TRADES_CNT: AtomicU64 = AtomicU64::new(0);
 
 #[tokio::main]
 async fn main() -> AppResult<()> {
+    // ВАЖНО: не прибиваем уровень "info" директивой,
+    // иначе RUST_LOG=debug не будет работать.
     tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::from_default_env().add_directive("info".parse().unwrap()))
+        .with_env_filter(EnvFilter::from_default_env())
         .init();
 
     let (pump_idl, amm_idl) = load_idls();
@@ -113,7 +117,9 @@ async fn run_pumpfun_stream(
         });
 
         ws_stream
-            .send(tokio_tungstenite::tungstenite::Message::Text(subscribe_msg.to_string()))
+            .send(tokio_tungstenite::tungstenite::Message::Text(
+                subscribe_msg.to_string(),
+            ))
             .await?;
 
         info!("📨 Pumpfun subscription sent");
@@ -198,7 +204,9 @@ async fn run_amm_stream(
         });
 
         ws_stream
-            .send(tokio_tungstenite::tungstenite::Message::Text(subscribe_msg.to_string()))
+            .send(tokio_tungstenite::tungstenite::Message::Text(
+                subscribe_msg.to_string(),
+            ))
             .await?;
 
         info!("📨 AMM subscription sent");
@@ -220,8 +228,7 @@ async fn run_amm_stream(
 
                     debug!(slot=%slot, txs_len=txs.len(), "AMM block received");
 
-                    if let Err(e) =
-                        process_amm_transactions(txs, slot, &idl, &mut redis_conn).await
+                    if let Err(e) = process_amm_transactions(txs, slot, &idl, &mut redis_conn).await
                     {
                         error!(slot=%slot, error=%e, "AMM process error");
                     }
@@ -273,13 +280,13 @@ async fn process_pump_transactions(
         };
 
         let signature = tx.transaction.signatures.get(0).unwrap().to_string();
-
         let is_success = tx.meta.err.is_none();
-        let tx_error: Option<String> = tx
-            .meta
-            .err
-            .as_ref()
-            .map(|e| serde_json::to_string(e).unwrap_or_else(|_| format!("{:?}", e)));
+
+        if !is_success {
+            continue; // skip failed tx entirely
+        }
+
+        let tx_error: Option<String> = None;
 
         debug!(
             slot=%slot,
@@ -289,14 +296,75 @@ async fn process_pump_transactions(
             "Pumpfun tx meta"
         );
 
-        let ix_contexts = instructions(
+        // ✅ НЕ ВАЛИМ ВЕСЬ БЛОК: ошибка instructions -> пропускаем только эту транзу
+        let ix_contexts = match instructions(
             tx,
             idl,
             &pump_instructions,
             &pump_inner_instructions,
             tx_idx,
-        )?;
+        ) {
+            Ok(v) => v,
+            Err(e) => {
+                error!(slot=%slot, signature=%signature, error=%e, "PUMP: instructions() failed, skipping tx");
+                continue;
+            }
+        };
+
         debug!("pump ix_contexts: {:#?}", ix_contexts);
+        let migrate_cnt = ix_contexts
+            .iter()
+            .filter(|ix| ix.ix_name == "migrate")
+            .count();
+        if migrate_cnt > 0 {
+            println!(
+                "🟦 FOUND PUMP migrate instruction(s): slot={} sig={} cnt={}",
+                slot, signature, migrate_cnt
+            );
+            println!("pump ix_contexts: {:#?}", ix_contexts);
+        }
+
+        for ix in ix_contexts.iter().filter(|ix| ix.ix_name == "migrate") {
+            let sig = PumpMigrateIxSignal {
+                slot,
+                signature: signature.clone(),
+                ix_index: ix.ix_index as u8,
+                is_inner: ix.is_inner,
+
+                mint: ix.accounts.get("mint").cloned().unwrap_or_default(),
+                pool: ix.accounts.get("pool").cloned().unwrap_or_default(),
+                bonding_curve: ix
+                    .accounts
+                    .get("bonding_curve")
+                    .cloned()
+                    .unwrap_or_default(),
+                associated_bonding_curve: ix
+                    .accounts
+                    .get("associated_bonding_curve")
+                    .cloned()
+                    .unwrap_or_default(),
+                user: ix.accounts.get("user").cloned().unwrap_or_default(),
+
+                pool_base_token_account: ix
+                    .accounts
+                    .get("pool_base_token_account")
+                    .cloned()
+                    .unwrap_or_default(),
+                pool_quote_token_account: ix
+                    .accounts
+                    .get("pool_quote_token_account")
+                    .cloned()
+                    .unwrap_or_default(),
+            };
+
+            println!(
+                "✅ MIGRATE-IX slot={} mint={} pool={} sig={}",
+                sig.slot, sig.mint, sig.pool, sig.signature
+            );
+
+            publish_event(redis_conn, "pump:migrations", &sig).await?;
+            publish_event_stream(redis_conn, "db:pump:migrations", &sig).await?;
+        }
 
         let mut event_contexts: Vec<EventContext> = Vec::new();
         for (log_idx, line) in tx
@@ -307,7 +375,23 @@ async fn process_pump_transactions(
             .iter()
             .enumerate()
         {
-            if let Some(event) = decode_pump_event_from_log(line)? {
+            // ✅ НЕ ВАЛИМ ВЕСЬ БЛОК: ошибка декодинга -> пропускаем только эту строку лога
+            let decoded = match decode_pump_event_from_log(line) {
+                Ok(v) => v,
+                Err(e) => {
+                    error!(
+                        slot=%slot,
+                        signature=%signature,
+                        log_idx=%log_idx,
+                        error=%e,
+                        raw_log=%line,
+                        "PUMP: decode_pump_event_from_log failed, skipping log line"
+                    );
+                    continue;
+                }
+            };
+
+            if let Some(event) = decoded {
                 event_contexts.push(EventContext {
                     log_index: log_idx,
                     raw_log: line.clone(),
@@ -318,7 +402,7 @@ async fn process_pump_transactions(
         debug!("pump event_contexts: {:#?}", event_contexts);
 
         let joined_actions = join_pump_ix_and_events(&ix_contexts, &event_contexts);
-        debug!(joined_len=joined_actions.len(), "Pumpfun joined actions");
+        debug!(joined_len = joined_actions.len(), "Pumpfun joined actions");
 
         for action in &joined_actions {
             debug!(
@@ -337,17 +421,20 @@ async fn process_pump_transactions(
                         tx_error.as_deref(),
                         action,
                     ) {
-                        // 1) PubSub для бота (как раньше)
                         publish_event(redis_conn, "pump:trades", &row).await?;
-
-                        // 2) Stream для базы
                         publish_event_stream(redis_conn, "db:pump:trades", &row).await?;
 
-                        // lag-лог (редко)
                         let n = PUMP_TRADES_CNT.fetch_add(1, Ordering::Relaxed) + 1;
                         if n % LOG_EVERY == 0 {
                             let lag_ms = lag_ms_from_chain_ts(row.timestamp);
-                            info!(channel="pump", kind="trade", every=LOG_EVERY, count=n, lag_ms=lag_ms, "lag");
+                            info!(
+                                channel = "pump",
+                                kind = "trade",
+                                every = LOG_EVERY,
+                                count = n,
+                                lag_ms = lag_ms,
+                                "lag"
+                            );
                         }
                     }
                 }
@@ -366,7 +453,14 @@ async fn process_pump_transactions(
                         let n = PUMP_CREATES_CNT.fetch_add(1, Ordering::Relaxed) + 1;
                         if n % LOG_EVERY == 0 {
                             let lag_ms = lag_ms_from_chain_ts(row.timestamp);
-                            info!(channel="pump", kind="create", every=LOG_EVERY, count=n, lag_ms=lag_ms, "lag");
+                            info!(
+                                channel = "pump",
+                                kind = "create",
+                                every = LOG_EVERY,
+                                count = n,
+                                lag_ms = lag_ms,
+                                "lag"
+                            );
                         }
                     }
                 }
@@ -385,14 +479,39 @@ async fn process_pump_transactions(
                         let n = PUMP_FEES_CNT.fetch_add(1, Ordering::Relaxed) + 1;
                         if n % LOG_EVERY == 0 {
                             let lag_ms = lag_ms_from_chain_ts(row.timestamp);
-                            info!(channel="pump", kind="creator_fee", every=LOG_EVERY, count=n, lag_ms=lag_ms, "lag");
+                            info!(
+                                channel = "pump",
+                                kind = "creator_fee",
+                                every = LOG_EVERY,
+                                count = n,
+                                lag_ms = lag_ms,
+                                "lag"
+                            );
                         }
                     }
                 }
 
-                PumpEvent::SetMetaplexCreator(_)
-                | PumpEvent::CompletePumpAmmMigration(_)
-                | PumpEvent::Complete(_) => {}
+                PumpEvent::CompletePumpAmmMigration(_) => {
+                    if let Some(row) = PumpAmmMigrationRow::from_joined(
+                        &signature,
+                        slot,
+                        is_success,
+                        tx_error.as_deref(),
+                        action,
+                    ) {
+                        println!(
+                            "✅ MIGRATION slot={} ts={} mint={} pool={} sig={}",
+                            row.slot, row.timestamp, row.mint, row.pool, row.signature
+                        );
+
+                        // если хочешь ещё ключи (но это уже многословно)
+                        // println!("keys={:?}", action.ix.accounts.keys());
+                        publish_event(redis_conn, "pump:migrations", &row).await?;
+                        publish_event_stream(redis_conn, "db:pump:migrations", &row).await?;
+                    }
+                }
+
+                PumpEvent::SetMetaplexCreator(_) | PumpEvent::Complete(_) => {}
             }
         }
     }
@@ -403,7 +522,6 @@ async fn process_pump_transactions(
 // =======================
 // AMM PROCESSING
 // =======================
-
 pub async fn process_amm_transactions(
     transactions: &Vec<Transaction>,
     slot: u64,
@@ -423,11 +541,10 @@ pub async fn process_amm_transactions(
         let signature = tx.transaction.signatures.get(0).unwrap().to_string();
 
         let is_success = tx.meta.err.is_none();
-        let tx_error: Option<String> = tx
-            .meta
-            .err
-            .as_ref()
-            .map(|e| serde_json::to_string(e).unwrap_or_else(|_| format!("{:?}", e)));
+        if !is_success {
+            continue; // skip failed tx entirely
+        }
+        let tx_error: Option<String> = None;
 
         debug!(
             slot=%slot,
@@ -437,8 +554,19 @@ pub async fn process_amm_transactions(
             "AMM tx meta"
         );
 
-        let ix_contexts =
-            instructions(tx, idl, &amm_instructions, &amm_inner_instructions, tx_idx)?;
+        let ix_contexts = match instructions(
+            tx,
+            idl,
+            &amm_instructions,
+            &amm_inner_instructions,
+            tx_idx,
+        ) {
+            Ok(v) => v,
+            Err(e) => {
+                error!(slot=%slot, signature=%signature, error=%e, "AMM: instructions() failed, skipping tx");
+                continue;
+            }
+        };
         debug!("amm ix_contexts: {:#?}", ix_contexts);
 
         let mut amm_event_contexts: Vec<AmmEventContext> = Vec::new();
@@ -450,7 +578,22 @@ pub async fn process_amm_transactions(
             .iter()
             .enumerate()
         {
-            if let Some(event) = decode_amm_event_from_log(line)? {
+            let decoded = match decode_amm_event_from_log(line) {
+                Ok(v) => v,
+                Err(e) => {
+                    error!(
+                        slot=%slot,
+                        signature=%signature,
+                        log_idx=%log_idx,
+                        error=%e,
+                        raw_log=%line,
+                        "AMM: decode_amm_event_from_log failed, skipping log line"
+                    );
+                    continue;
+                }
+            };
+
+            if let Some(event) = decoded {
                 amm_event_contexts.push(AmmEventContext {
                     log_index: log_idx,
                     raw_log: line.clone(),
@@ -461,7 +604,7 @@ pub async fn process_amm_transactions(
         debug!("amm event_contexts: {:#?}", amm_event_contexts);
 
         let joined_actions = join_amm_ix_and_events(&ix_contexts, &amm_event_contexts);
-        debug!(joined_len=joined_actions.len(), "AMM joined actions");
+        debug!(joined_len = joined_actions.len(), "AMM joined actions");
 
         for action in &joined_actions {
             debug!(
@@ -471,8 +614,11 @@ pub async fn process_amm_transactions(
                 "AMM action"
             );
 
-            let row =
-                AmmTradeRow::from_joined(&signature, slot, is_success, tx_error.as_deref(), action);
+            let Some(row) =
+                AmmTradeRow::from_joined(&signature, slot, is_success, tx_error.as_deref(), action)
+            else {
+                continue; // filtered out
+            };
 
             publish_event(redis_conn, "amm:trades", &row).await?;
             publish_event_stream(redis_conn, "db:amm:trades", &row).await?;
@@ -480,7 +626,14 @@ pub async fn process_amm_transactions(
             let n = AMM_TRADES_CNT.fetch_add(1, Ordering::Relaxed) + 1;
             if n % LOG_EVERY == 0 {
                 let lag_ms = lag_ms_from_chain_ts(row.timestamp);
-                info!(channel="amm", kind="trade", every=LOG_EVERY, count=n, lag_ms=lag_ms, "lag");
+                info!(
+                    channel = "amm",
+                    kind = "trade",
+                    every = LOG_EVERY,
+                    count = n,
+                    lag_ms = lag_ms,
+                    "lag"
+                );
             }
         }
     }

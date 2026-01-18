@@ -62,6 +62,8 @@ pub struct AmmTradeRow {
     pub min_base_amount_out: u64,
 }
 
+const SOL_MINT: &str = "So11111111111111111111111111111111111111112";
+
 impl AmmTradeRow {
     pub fn from_joined(
         signature: &str,
@@ -69,29 +71,34 @@ impl AmmTradeRow {
         is_success: bool,
         tx_error: Option<&str>,
         action: &JoinedAmmAction,
-    ) -> Self {
+    ) -> Option<Self> {
         let ix = &action.ix;
         let accs = &ix.accounts;
+
+        // ✅ early filter: keep only token/SOL, not inverted
+        let base_mint = acc(accs, "base_mint");
+        let quote_mint = acc(accs, "quote_mint");
+
+        if quote_mint != SOL_MINT || base_mint == SOL_MINT {
+            return None;
+        }
 
         let tx_error = tx_error.map(|s| s.to_string());
 
         match &action.event.event {
-            AmmEvent::Sell(ev) => Self {
-                // NEW meta
+            AmmEvent::Sell(ev) => Some(Self {
                 slot,
                 is_success,
                 tx_error: tx_error.clone(),
 
-                // мета
                 signature: signature.to_string(),
                 ix_name: ix.ix_name.clone(),
                 ix_index: ix.ix_index as u8,
                 is_inner: ix.is_inner,
                 is_buy: false,
 
-                // аккаунты
                 associated_token_program: acc(accs, "associated_token_program"),
-                base_mint: acc(accs, "base_mint"),
+                base_mint, // ✅ уже достали
                 base_token_program: acc(accs, "base_token_program"),
                 coin_creator_vault_ata: acc(accs, "coin_creator_vault_ata"),
                 coin_creator_vault_authority: acc(accs, "coin_creator_vault_authority"),
@@ -106,7 +113,7 @@ impl AmmTradeRow {
                 program: acc(accs, "program"),
                 protocol_fee_recipient: acc(accs, "protocol_fee_recipient"),
                 protocol_fee_recipient_token_account: acc(accs, "protocol_fee_recipient_token_account"),
-                quote_mint: acc(accs, "quote_mint"),
+                quote_mint, // ✅ уже достали
                 quote_token_program: acc(accs, "quote_token_program"),
                 system_program: acc(accs, "system_program"),
                 user: acc(accs, "user"),
@@ -114,7 +121,6 @@ impl AmmTradeRow {
                 user_quote_token_account: acc(accs, "user_quote_token_account"),
                 user_volume_accumulator: None,
 
-                // событие SELL
                 timestamp: ev.timestamp,
 
                 base_amount_in: ev.base_amount_in,
@@ -148,24 +154,21 @@ impl AmmTradeRow {
 
                 track_volume: false,
                 min_base_amount_out: 0,
-            },
+            }),
 
-            AmmEvent::Buy(ev) => Self {
-                // NEW meta
+            AmmEvent::Buy(ev) => Some(Self {
                 slot,
                 is_success,
                 tx_error: tx_error.clone(),
 
-                // мета
                 signature: signature.to_string(),
                 ix_name: ix.ix_name.clone(),
                 ix_index: ix.ix_index as u8,
                 is_inner: ix.is_inner,
                 is_buy: true,
 
-                // аккаунты
                 associated_token_program: acc(accs, "associated_token_program"),
-                base_mint: acc(accs, "base_mint"),
+                base_mint,
                 base_token_program: acc(accs, "base_token_program"),
                 coin_creator_vault_ata: acc(accs, "coin_creator_vault_ata"),
                 coin_creator_vault_authority: acc(accs, "coin_creator_vault_authority"),
@@ -180,7 +183,7 @@ impl AmmTradeRow {
                 program: acc(accs, "program"),
                 protocol_fee_recipient: acc(accs, "protocol_fee_recipient"),
                 protocol_fee_recipient_token_account: acc(accs, "protocol_fee_recipient_token_account"),
-                quote_mint: acc(accs, "quote_mint"),
+                quote_mint,
                 quote_token_program: acc(accs, "quote_token_program"),
                 system_program: acc(accs, "system_program"),
                 user: acc(accs, "user"),
@@ -188,7 +191,6 @@ impl AmmTradeRow {
                 user_quote_token_account: acc(accs, "user_quote_token_account"),
                 user_volume_accumulator: acc_opt(accs, "user_volume_accumulator"),
 
-                // событие BUY
                 timestamp: ev.timestamp,
 
                 base_amount_in: 0,
@@ -222,7 +224,7 @@ impl AmmTradeRow {
 
                 track_volume: ev.track_volume,
                 min_base_amount_out: ev.min_base_amount_out,
-            },
+            }),
         }
     }
 }

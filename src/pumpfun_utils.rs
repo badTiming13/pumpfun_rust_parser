@@ -66,10 +66,18 @@ pub fn decode_pump_event_from_log(
         None => return Ok(None),
     };
 
-    let bytes = STANDARD.decode(base64_part)?;
+    // ✅ Фильтр: это не Anchor event, а synopsis blob
+    if base64_part.starts_with("Synopsis ") {
+        return Ok(None);
+    }
+
+    // ✅ Мягкий decode: если не base64 — просто не наш event
+    let bytes = match STANDARD.decode(base64_part) {
+        Ok(b) => b,
+        Err(_) => return Ok(None),
+    };
 
     if bytes.len() < 8 {
-        // слишком коротко, чтобы содержать дискриминатор
         return Ok(None);
     }
 
@@ -106,7 +114,6 @@ pub fn decode_pump_event_from_log(
         )?;
         Ok(Some(PumpEvent::CollectCreatorFee(event)))
     } else {
-        // неизвестный дискриминатор — не наш event
         Ok(None)
     }
 }

@@ -12,14 +12,26 @@ const SELL_EVENT_DISCRIMINATOR: [u8; 8] = [62, 47, 55, 10, 165, 3, 220, 42];
 
 
 /// Декодим BuyEvent / SellEvent из логов (`Program data: ...`)
-pub fn decode_amm_event_from_log(line: &str) -> Result<Option<AmmEvent>, Box<dyn std::error::Error>> {
+pub fn decode_amm_event_from_log(
+    line: &str,
+) -> Result<Option<AmmEvent>, Box<dyn std::error::Error>> {
     let prefix = "Program data: ";
-    let base64_part = match line.strip_prefix(prefix) {
+    let data = match line.strip_prefix(prefix) {
         Some(s) => s.trim(),
         None => return Ok(None),
     };
 
-    let bytes = STANDARD.decode(base64_part)?;
+    // ✅ Фильтр: это не Anchor event
+    // Пример: "Program data: Synopsis <...>"
+    if data.starts_with("Synopsis ") {
+        return Ok(None);
+    }
+
+    // ✅ Мягкий decode: если не base64 — просто не наш event
+    let bytes = match STANDARD.decode(data) {
+        Ok(b) => b,
+        Err(_) => return Ok(None),
+    };
 
     if bytes.len() < 8 {
         return Ok(None);
@@ -37,4 +49,3 @@ pub fn decode_amm_event_from_log(line: &str) -> Result<Option<AmmEvent>, Box<dyn
         Ok(None)
     }
 }
-
