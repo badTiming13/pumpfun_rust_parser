@@ -296,7 +296,7 @@ async fn process_pump_transactions(
             "Pumpfun tx meta"
         );
 
-        // ✅ НЕ ВАЛИМ ВЕСЬ БЛОК: ошибка instructions -> пропускаем только эту транзу
+        
         let ix_contexts = match instructions(
             tx,
             idl,
@@ -375,7 +375,7 @@ async fn process_pump_transactions(
             .iter()
             .enumerate()
         {
-            // ✅ НЕ ВАЛИМ ВЕСЬ БЛОК: ошибка декодинга -> пропускаем только эту строку лога
+            
             let decoded = match decode_pump_event_from_log(line) {
                 Ok(v) => v,
                 Err(e) => {
