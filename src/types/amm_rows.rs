@@ -1,12 +1,14 @@
 use serde::Serialize;
-use clickhouse::Row;
 
-use crate::{db::{acc, acc_opt}, types::AmmEvent, utils::JoinedAmmAction};
+use crate::types::AmmEvent;
+use crate::utils::JoinedAmmAction;
 
-#[derive(Debug, Serialize, Row, Clone)]
+use super::pump_rows::{acc, acc_opt};
+
+#[derive(Debug, Serialize, Clone)]
 pub struct AmmTradeRow {
     pub slot: u64,
-    is_success: bool,
+    pub is_success: bool,
     pub tx_error: Option<String>,
     pub signature: String,
     pub ix_name: String,
@@ -36,25 +38,26 @@ pub struct AmmTradeRow {
     pub user_base_token_account: String,
     pub user_quote_token_account: String,
     pub user_volume_accumulator: Option<String>,
-    pub timestamp: i64,                    
-    pub base_amount_in: u64,               
-    pub base_amount_out: u64,              
-    pub min_quote_amount_out: u64,         
-    pub max_quote_amount_in: u64,          
-    pub user_base_token_reserves: u64,     
-    pub user_quote_token_reserves: u64,    
-    pub pool_base_token_reserves: u64,     
-    pub pool_quote_token_reserves: u64,    
-    pub quote_amount_in: u64,              
-    pub quote_amount_out: u64,             
-    pub lp_fee_basis_points: u64,          
-    pub lp_fee: u64,                       
-    pub protocol_fee_basis_points: u64,    
-    pub protocol_fee: u64,                 
-    pub quote_amount_in_with_lp_fee: u64,  
-    pub quote_amount_out_without_lp_fee: u64, 
-    pub user_quote_amount_in: u64,         
-    pub user_quote_amount_out: u64,        
+
+    pub timestamp: i64,
+    pub base_amount_in: u64,
+    pub base_amount_out: u64,
+    pub min_quote_amount_out: u64,
+    pub max_quote_amount_in: u64,
+    pub user_base_token_reserves: u64,
+    pub user_quote_token_reserves: u64,
+    pub pool_base_token_reserves: u64,
+    pub pool_quote_token_reserves: u64,
+    pub quote_amount_in: u64,
+    pub quote_amount_out: u64,
+    pub lp_fee_basis_points: u64,
+    pub lp_fee: u64,
+    pub protocol_fee_basis_points: u64,
+    pub protocol_fee: u64,
+    pub quote_amount_in_with_lp_fee: u64,
+    pub quote_amount_out_without_lp_fee: u64,
+    pub user_quote_amount_in: u64,
+    pub user_quote_amount_out: u64,
     pub coin_creator: String,
     pub coin_creator_fee_basis_points: u64,
     pub coin_creator_fee: u64,
@@ -75,10 +78,9 @@ impl AmmTradeRow {
         let ix = &action.ix;
         let accs = &ix.accounts;
 
-        // ✅ early filter: keep only token/SOL, not inverted
+        // keep only token/SOL
         let base_mint = acc(accs, "base_mint");
         let quote_mint = acc(accs, "quote_mint");
-
         if quote_mint != SOL_MINT || base_mint == SOL_MINT {
             return None;
         }
@@ -98,7 +100,7 @@ impl AmmTradeRow {
                 is_buy: false,
 
                 associated_token_program: acc(accs, "associated_token_program"),
-                base_mint, // ✅ уже достали
+                base_mint,
                 base_token_program: acc(accs, "base_token_program"),
                 coin_creator_vault_ata: acc(accs, "coin_creator_vault_ata"),
                 coin_creator_vault_authority: acc(accs, "coin_creator_vault_authority"),
@@ -113,7 +115,7 @@ impl AmmTradeRow {
                 program: acc(accs, "program"),
                 protocol_fee_recipient: acc(accs, "protocol_fee_recipient"),
                 protocol_fee_recipient_token_account: acc(accs, "protocol_fee_recipient_token_account"),
-                quote_mint, // ✅ уже достали
+                quote_mint,
                 quote_token_program: acc(accs, "quote_token_program"),
                 system_program: acc(accs, "system_program"),
                 user: acc(accs, "user"),

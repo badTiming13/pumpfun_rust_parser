@@ -1,8 +1,8 @@
-pub mod pump_idl;
-pub mod block_notification;
-pub mod amm_events;
-pub mod pump_events;
+pub use pump_parser_core::types::amm_events::*;
 
-pub use pump_idl::*;
-pub use block_notification::*;
-pub use amm_events::*;
+// redis msg types
+pub mod pump_rows;
+pub mod amm_rows;
+
+pub use pump_rows::*;
+pub use amm_rows::*;

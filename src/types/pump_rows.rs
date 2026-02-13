@@ -1,16 +1,10 @@
-use clickhouse::Row;
 use serde::Serialize;
 
-use crate::{
-    prelude::PumpEvent,
-    utils::{AccountMap, JoinedPumpAction},
-};
+use crate::prelude::PumpEvent;
+use crate::utils::JoinedPumpAction;
+use pump_parser_core::idl::match_ix::AccountMap;
 
-// =======================
-// CLICKHOUSE ROW STRUCTS
-// =======================
-
-// хелперы для доступа к accounts
+// helpers for accounts
 pub fn acc(map: &AccountMap, key: &str) -> String {
     map.get(key).cloned().unwrap_or_default()
 }
@@ -19,19 +13,17 @@ pub fn acc_opt(map: &AccountMap, key: &str) -> Option<String> {
     map.get(key).cloned()
 }
 
-#[derive(Debug, Serialize, Row, Clone)]
+#[derive(Debug, Serialize, Clone)]
 pub struct PumpTradeRow {
-    // мета по инструкции
     pub slot: u64,
-    is_success: bool,
+    pub is_success: bool,
     pub tx_error: Option<String>,
     pub signature: String,
-    pub ix_name: String, // LowCardinality(String) -> String
-    pub ix_index: u8,    // UInt8
+    pub ix_name: String,
+    pub ix_index: u8,
     pub is_inner: bool,
     pub is_buy: bool,
 
-    // аккаунты
     pub associated_bonding_curve: String,
     pub associated_user: String,
     pub bonding_curve: String,
@@ -41,42 +33,39 @@ pub struct PumpTradeRow {
     pub fee_program: String,
     pub fee_recipient: String,
     pub global: String,
-    pub global_volume_accumulator: Option<String>, // Nullable(String)
+    pub global_volume_accumulator: Option<String>,
     pub mint: String,
     pub program: String,
     pub system_program: String,
     pub token_program: String,
     pub user: String,
-    pub user_volume_accumulator: Option<String>, // Nullable(String)
+    pub user_volume_accumulator: Option<String>,
 
-    // поля события
-    pub timestamp: i64,              // Int64
-    pub sol_amount: u64,             // UInt64
-    pub token_amount: u64,           // UInt64
-    pub virtual_sol_reserves: u64,   // UInt64
-    pub virtual_token_reserves: u64, // UInt64
-    pub real_sol_reserves: u64,      // UInt64
-    pub real_token_reserves: u64,    // UInt64
-    pub fee_basis_points: u16,       // UInt16
-    pub fee: u64,                    // UInt64
+    pub timestamp: i64,
+    pub sol_amount: u64,
+    pub token_amount: u64,
+    pub virtual_sol_reserves: u64,
+    pub virtual_token_reserves: u64,
+    pub real_sol_reserves: u64,
+    pub real_token_reserves: u64,
+    pub fee_basis_points: u16,
+    pub fee: u64,
     pub creator: String,
-    pub creator_fee_basis_points: u16, // UInt16
-    pub creator_fee: u64,              // UInt64
+    pub creator_fee_basis_points: u16,
+    pub creator_fee: u64,
     pub track_volume: bool,
 }
 
-#[derive(Debug, Serialize, Row, Clone)]
+#[derive(Debug, Serialize, Clone)]
 pub struct PumpCreateRow {
-    // мета по инструкции
     pub slot: u64,
-    is_success: bool,
+    pub is_success: bool,
     pub tx_error: Option<String>,
     pub signature: String,
-    pub ix_name: String, // LowCardinality(String) -> String
+    pub ix_name: String,
     pub ix_index: u8,
     pub is_inner: bool,
 
-    // аккаунты
     pub associated_bonding_curve: String,
     pub associated_user: String,
     pub bonding_curve: String,
@@ -94,7 +83,6 @@ pub struct PumpCreateRow {
     pub token_program: String,
     pub user: String,
 
-    // поля события
     pub timestamp: i64,
     pub name: String,
     pub symbol: String,
@@ -107,9 +95,8 @@ pub struct PumpCreateRow {
     pub is_mayhem_mode: bool,
 }
 
-#[derive(Debug, Serialize, Row, Clone)]
+#[derive(Debug, Serialize, Clone)]
 pub struct PumpAmmMigrationRow {
-    // meta
     pub slot: u64,
     pub is_success: bool,
     pub tx_error: Option<String>,
@@ -118,7 +105,6 @@ pub struct PumpAmmMigrationRow {
     pub ix_index: u8,
     pub is_inner: bool,
 
-    // accounts
     pub global: String,
     pub withdraw_authority: String,
     pub mint: String,
@@ -136,36 +122,32 @@ pub struct PumpAmmMigrationRow {
     pub event_authority: String,
     pub program: String,
 
-    // event fields
     pub timestamp: i64,
     pub mint_amount: u64,
     pub sol_amount: u64,
     pub pool_migration_fee: u64,
 }
 
-
-#[derive(Debug, Serialize, Row, Clone)]
+#[derive(Debug, Serialize, Clone)]
 pub struct PumpCreatorFeeRow {
-    // мета по инструкции
     pub slot: u64,
-    is_success: bool,
+    pub is_success: bool,
     pub tx_error: Option<String>,
     pub signature: String,
-    pub ix_name: String, // LowCardinality(String) -> String
+    pub ix_name: String,
     pub ix_index: u8,
     pub is_inner: bool,
 
-    // аккаунты
     pub creator: String,
     pub creator_vault: String,
     pub event_authority: String,
     pub program: String,
     pub system_program: String,
 
-    // поля события
     pub timestamp: i64,
     pub creator_fee: u64,
 }
+
 #[derive(Debug, Serialize, Clone)]
 pub struct PumpMigrateIxSignal {
     pub slot: u64,
@@ -183,7 +165,6 @@ pub struct PumpMigrateIxSignal {
     pub pool_quote_token_account: String,
 }
 
-
 impl PumpTradeRow {
     pub fn from_joined(
         signature: &str,
@@ -200,7 +181,6 @@ impl PumpTradeRow {
         };
 
         Some(Self {
-            // NEW
             slot,
             is_success,
             tx_error: tx_error.map(|s| s.to_string()),
@@ -261,7 +241,6 @@ impl PumpCreateRow {
         };
 
         Some(Self {
-            // NEW
             slot,
             is_success,
             tx_error: tx_error.map(|s| s.to_string()),
@@ -318,7 +297,6 @@ impl PumpCreatorFeeRow {
         };
 
         Some(Self {
-            // NEW
             slot,
             is_success,
             tx_error: tx_error.map(|s| s.to_string()),
